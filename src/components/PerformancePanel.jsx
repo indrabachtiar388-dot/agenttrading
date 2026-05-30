@@ -11,14 +11,14 @@ function StatBox({ label, value, tone, sub }) {
   );
 }
 
-/* Kurva ekuitas: PnL% kumulatif dari trade selesai (urut waktu tutup). */
+/* Kurva ekuitas: PnL% kumulatif dari trade yang sudah selesai (diurutkan berdasarkan waktu penutupan). */
 function EquityCurve({ trades }) {
   const closed = trades
     .filter((t) => t.status === 'WIN' || t.status === 'LOSS')
     .sort((a, b) => (a.closedAt || 0) - (b.closedAt || 0));
 
   if (closed.length < 2) {
-    return <div className="perf-curve empty">Kurva ekuitas muncul setelah minimal 2 trade selesai.</div>;
+    return <div className="perf-curve empty">Kurva ekuitas tersedia setelah minimal 2 trade selesai.</div>;
   }
 
   let cum = 0;
@@ -57,7 +57,7 @@ export default function PerformancePanel({ stats, trades = [], onReset }) {
   return (
     <div className="panel">
       <div className="panel-header">
-        <h3><Trophy size={16} style={{ verticalAlign: '-3px', marginRight: 6, color: 'var(--amber)' }} /> Performa Backtest</h3>
+        <h3><Trophy size={16} style={{ verticalAlign: '-3px', marginRight: 6, color: 'var(--amber)' }} /> Performa Simulasi</h3>
         {onReset && (
           <button type="button" className="btn-secondary" style={{ padding: '8px 14px', fontSize: 13 }} onClick={onReset}>
             <RotateCcw size={14} /> Reset
@@ -66,7 +66,7 @@ export default function PerformancePanel({ stats, trades = [], onReset }) {
       </div>
 
       {stats.total === 0 && stats.active === 0 ? (
-        <div className="empty-state">Belum ada trade backtest. Sinyal terbaik akan otomatis dilacak begitu muncul.</div>
+        <div className="empty-state">Belum ada data simulasi. Sinyal dengan grade terbaik akan otomatis dilacak begitu muncul.</div>
       ) : (
         <>
           <div className="perf-grid">
@@ -88,8 +88,8 @@ export default function PerformancePanel({ stats, trades = [], onReset }) {
           </div>
 
           <p className="perf-note">
-            Ekspektansi = rata-rata hasil per trade (memperhitungkan win rate). Positif berarti
-            strategi sinyal ini menguntungkan dalam simulasi. Mode backtest, bukan eksekusi nyata.
+            Ekspektansi adalah rata-rata hasil per trade dengan memperhitungkan win rate. Nilai positif
+            menandakan strategi ini menguntungkan dalam simulasi. Mode backtest, bukan eksekusi nyata.
           </p>
         </>
       )}

@@ -48,7 +48,7 @@ export default function LoginPage({ onBack }) {
         </div>
 
         <h2>Masuk ke Dasbor</h2>
-        <p className="sub">Login untuk mengakses agent trading dan sinyal live.</p>
+        <p className="sub">Akses sinyal pasar dan kontrol agent untuk memulai backtest.</p>
 
         <form onSubmit={handleSubmit}>
           <div className="login-field">
@@ -87,7 +87,7 @@ export default function LoginPage({ onBack }) {
         {error && <div className="login-error">{error}</div>}
 
         <p style={{ marginTop: 16, fontSize: 12, color: 'var(--muted)', textAlign: 'center' }}>
-          Belum punya akun? Langsung login saja — kami akan buatkan otomatis.
+          Belum punya akun? Login langsung — kami akan membuatkan secara otomatis.
         </p>
       </div>
     </div>

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  LogOut, RefreshCw, Activity, TrendingUp, Trophy, Settings, Bot, Zap
+  LogOut, RefreshCw, Activity, Trophy, Settings, Bot, Zap
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth.jsx';
 import {
@@ -15,14 +15,14 @@ import {
 import SignalCard from '../components/SignalCard.jsx';
 import SignalDetail from '../components/SignalDetail.jsx';
 import PerformancePanel from '../components/PerformancePanel.jsx';
-import BacktestHistory from '../components/BacktestHistory.jsx';
 
 const TABS = [
-  { key: 'signals', label: 'Sinyal Live', icon: Activity },
-  { key: 'history', label: 'Riwayat', icon: TrendingUp },
+  { key: 'signals', label: 'Sinyal Pasar', icon: Activity },
   { key: 'performance', label: 'Performa', icon: Trophy },
   { key: 'agent', label: 'Agent', icon: Settings },
 ];
+
+const HISTORY_RESET_KEY = 'ma_history_reset_v2';
 
 export default function Dashboard({ onLogout }) {
   const { user } = useAuth();
@@ -34,6 +34,14 @@ export default function Dashboard({ onLogout }) {
   const [selectedCa, setSelectedCa] = useState(null);
   const [toast, setToast] = useState('');
   const [lastPriceUpdate, setLastPriceUpdate] = useState(null);
+
+  useEffect(() => {
+    if (localStorage.getItem(HISTORY_RESET_KEY) !== 'true') {
+      resetBacktest();
+      setTrades([]);
+      localStorage.setItem(HISTORY_RESET_KEY, 'true');
+    }
+  }, []);
 
   const agentOnRef = useRef(agentOn);
   agentOnRef.current = agentOn;
@@ -125,13 +133,13 @@ export default function Dashboard({ onLogout }) {
     const next = !agentOn;
     setAgentOn(next);
     localStorage.setItem('ma_agent_on', String(next));
-    showToast(next ? 'Auto-track aktif — sinyal A+/A dilacak otomatis' : 'Auto-track dijeda');
+    showToast(next ? 'Auto-track aktif: sinyal terbaik dilacak otomatis' : 'Auto-track dijeda');
   };
 
   const handleReset = () => {
     resetBacktest();
     setTrades(getBacktestTrades());
-    showToast('Riwayat backtest direset');
+    showToast('Data backtest telah dikosongkan');
   };
 
   const selectedSignal = selectedCa
@@ -146,11 +154,7 @@ export default function Dashboard({ onLogout }) {
         {TABS.map(({ key, label, icon: Icon }) => (
           <button key={key} className={tab === key ? 'active' : ''} onClick={() => setTab(key)}>
             <Icon size={15} /> {label}
-            {key === 'history' && tradesMap.size > 0 && (
-              <span className="badge" style={{ marginLeft: 6, background: 'rgba(6,182,212,0.2)', color: 'var(--cyan)', border: 'none' }}>
-                {tradesMap.size}
-              </span>
-            )}
+            {key === 'signals' && tradesMap.size > 0 && <span className="tab-count">{tradesMap.size}</span>}
           </button>
         ))}
       </div>
@@ -167,9 +171,6 @@ export default function Dashboard({ onLogout }) {
           onRefresh={handleRefreshSignals}
           onSelect={(s) => setSelectedCa(s.ca)}
         />
-      )}
-      {tab === 'history' && (
-        <BacktestHistory trades={trades} onSelect={(t) => { setSelectedCa(t.ca); }} />
       )}
       {tab === 'performance' && (
         <PerformancePanel stats={stats} trades={trades} onReset={handleReset} />
@@ -200,7 +201,7 @@ function NavBar({ user, onLogout }) {
         <span>AI</span>
         <div>
           <strong>MemeAgent</strong>
-          <small>Sinyal & Backtest Solana</small>
+          <small>Signal Intelligence Solana</small>
         </div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -218,8 +219,8 @@ function NavBar({ user, onLogout }) {
 
 const FEED_FILTERS = [
   { key: 'all', label: 'Semua' },
-  { key: 'entry', label: 'Entry' },
-  { key: 'highrisk', label: 'High Risk' },
+  { key: 'entry', label: 'Layak Entry' },
+  { key: 'highrisk', label: 'Selektif B' },
   { key: 'active', label: 'Dilacak' },
 ];
 
@@ -244,16 +245,19 @@ function SignalsTab({ signals, tradesMap, counts, stats, scanning, agentOn, last
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div className="signal-summary">
-        <div className="ss-stat" title="Total sinyal yang ditampilkan saat ini"><span>Sinyal</span><strong>{counts.total}</strong></div>
-        <div className="ss-stat" title="Grade A+/A — setup layak entry"><span>Entry Layak</span><strong className="text-green">{counts.buy}</strong></div>
-        <div className="ss-stat" title="Grade B — entry spekulatif, diseleksi ketat"><span>High Risk</span><strong className="text-amber">{counts.highRisk}</strong></div>
-        <div className="ss-stat" title="Trade backtest yang sedang berjalan menuju TP/SL"><span>Dilacak</span><strong className="text-cyan">{tradesMap.size}</strong></div>
-        <div className="ss-stat" title="Persentase trade selesai yang menang"><span>Win Rate</span><strong className={stats.winRate >= 50 ? 'text-green' : 'text-red'}>{stats.total ? `${stats.winRate.toFixed(0)}%` : '—'}</strong></div>
+        <div className="ss-stat" title="Total sinyal yang sedang tampil"><span>Total Sinyal</span><strong>{counts.total}</strong></div>
+        <div className="ss-stat" title="Grade A+/A dengan kualitas entry terbaik"><span>Prioritas Entry</span><strong className="text-green">{counts.buy}</strong></div>
+        <div className="ss-stat" title="Grade B hanya tampil jika memenuhi gerbang seleksi tambahan"><span>Grade B Tersaring</span><strong className="text-amber">{counts.highRisk}</strong></div>
+        <div className="ss-stat" title="Trade simulasi yang masih dipantau menuju TP/SL"><span>Dalam Pantauan</span><strong className="text-cyan">{tradesMap.size}</strong></div>
+        <div className="ss-stat" title="Persentase trade selesai yang berakhir menang"><span>Win Rate</span><strong className={stats.winRate >= 50 ? 'text-green' : 'text-red'}>{stats.total ? `${stats.winRate.toFixed(0)}%` : '—'}</strong></div>
       </div>
 
       <div className="panel">
         <div className="panel-header">
-          <h3>Sinyal Live</h3>
+          <div>
+            <h3>Sinyal Pasar</h3>
+            <p className="panel-subtitle">Feed backtest untuk membaca peluang, kualitas momentum, dan risiko sebelum sistem digunakan secara real-time.</p>
+          </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             {lastPriceUpdate && (
               <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>
@@ -263,12 +267,12 @@ function SignalsTab({ signals, tradesMap, counts, stats, scanning, agentOn, last
             {agentOn && (
               <span className="scan-mini" style={{ padding: '6px 10px', fontSize: 12 }}>
                 <div className="spinner" style={{ width: 12, height: 12 }} />
-                Auto-track
+                Auto-track aktif
               </span>
             )}
             <button type="button" className="btn-secondary" style={{ padding: '8px 14px', fontSize: 13 }} onClick={onRefresh} disabled={scanning}>
               <RefreshCw size={14} style={{ animation: scanning ? 'spin 1s linear infinite' : 'none' }} />
-              {scanning ? 'Memindai...' : 'Perbarui'}
+              {scanning ? 'Memindai...' : 'Perbarui Sinyal'}
             </button>
           </div>
         </div>
@@ -287,17 +291,17 @@ function SignalsTab({ signals, tradesMap, counts, stats, scanning, agentOn, last
             ))}
           </div>
           <button type="button" className="guide-toggle" onClick={() => setShowGuide((v) => !v)}>
-            {showGuide ? 'Tutup panduan' : 'Apa arti grade?'}
+            {showGuide ? 'Tutup panduan' : 'Panduan grade'}
           </button>
         </div>
 
         {showGuide && (
           <div className="feed-legend">
-            <div><span className="badge" style={{ background: 'rgba(34,197,94,0.18)', color: 'var(--green)', border: '1px solid rgba(34,197,94,0.4)' }}>A+</span> Entry kuat — struktur, momentum, risiko ideal.</div>
-            <div><span className="badge" style={{ background: 'rgba(6,182,212,0.14)', color: 'var(--cyan)', border: '1px solid rgba(6,182,212,0.35)' }}>A</span> Entry bagus dengan risiko terkendali.</div>
-            <div><span className="badge" style={{ background: 'rgba(245,158,11,0.16)', color: 'var(--amber)', border: '1px solid rgba(245,158,11,0.4)' }}>B</span> High Risk — spekulatif, diseleksi sangat ketat.</div>
-            <div><span className="sc-status active">DILACAK</span> di-entry virtual, menunggu TP/SL. <span className="sc-status win">WIN</span>/<span className="sc-status loss">LOSS</span> = hasil akhir.</div>
-            <div className="feed-legend-note">SL/TP relatif per token (volatilitas, likuiditas, momentum). Mode backtest — bukan eksekusi on-chain.</div>
+            <div><span className="badge" style={{ background: 'rgba(22,163,74,0.12)', color: 'var(--green)', border: '1px solid rgba(22,163,74,0.28)' }}>A+</span> Prioritas tertinggi: struktur, momentum, dan risiko paling seimbang.</div>
+            <div><span className="badge" style={{ background: 'rgba(37,99,235,0.1)', color: 'var(--cyan)', border: '1px solid rgba(37,99,235,0.24)' }}>A</span> Layak dipantau untuk entry dengan risiko yang masih terukur.</div>
+            <div><span className="badge" style={{ background: 'rgba(217,119,6,0.12)', color: 'var(--amber)', border: '1px solid rgba(217,119,6,0.26)' }}>B</span> Selektif: hanya muncul jika lolos filter tambahan untuk mengurangi potensi loss.</div>
+            <div><span className="sc-status active">DILACAK</span> berarti entry virtual aktif sampai menyentuh TP atau SL. <span className="sc-status win">WIN</span>/<span className="sc-status loss">LOSS</span> adalah hasil simulasi.</div>
+            <div className="feed-legend-note">SL/TP menyesuaikan karakter token: volatilitas, likuiditas, momentum, dan keyakinan data. Saat ini masih mode backtest, bukan eksekusi on-chain.</div>
           </div>
         )}
 
@@ -308,8 +312,8 @@ function SignalsTab({ signals, tradesMap, counts, stats, scanning, agentOn, last
         ) : filtered.length === 0 ? (
           <div className="empty-state">
             {signals.length === 0
-              ? 'Belum ada sinyal yang lolos filter. Klik Perbarui.'
-              : 'Tidak ada sinyal pada filter ini.'}
+              ? 'Belum ada sinyal yang memenuhi standar seleksi. Klik Perbarui Sinyal untuk memindai ulang.'
+              : 'Belum ada sinyal yang cocok dengan filter ini.'}
           </div>
         ) : (
           <div className="signal-grid">
@@ -331,7 +335,7 @@ function AgentTab({ agentOn, onToggle, onReset }) {
           <h3>Kontrol Agent</h3>
           <div className="live-dot" style={{ color: agentOn ? 'var(--green)' : 'var(--muted)' }}>
             <span style={{ background: agentOn ? 'var(--green)' : 'var(--muted)', animation: agentOn ? 'pulse-dot 1.4s ease-out infinite' : 'none' }} />
-            {agentOn ? 'Auto-track Aktif' : 'Auto-track Jeda'}
+            {agentOn ? 'Auto-track Aktif' : 'Auto-track Dijeda'}
           </div>
         </div>
 
@@ -339,9 +343,9 @@ function AgentTab({ agentOn, onToggle, onReset }) {
           <div className="toggle-row">
             <button type="button" className={`toggle ${agentOn ? 'on' : ''}`} onClick={onToggle} aria-label="Toggle auto-track" />
             <div>
-              <strong style={{ fontSize: 15 }}>Auto-Track Sinyal</strong>
+              <strong style={{ fontSize: 15 }}>Auto-Track Sinyal Pilihan</strong>
               <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                Saat aktif, sinyal grade A+/A dan sebagian kecil grade B terbaik langsung di-entry virtual dan dilacak otomatis hingga menyentuh TP atau SL.
+                Saat aktif, grade A+/A dan grade B yang lolos seleksi tambahan akan di-entry virtual dan dipantau otomatis sampai TP atau SL.
               </div>
             </div>
           </div>
@@ -349,7 +353,7 @@ function AgentTab({ agentOn, onToggle, onReset }) {
 
         <div style={{ marginTop: 16 }}>
           <button type="button" className="btn-secondary" style={{ fontSize: 13, padding: '10px 16px' }} onClick={onReset}>
-            <Zap size={14} /> Reset Riwayat Backtest
+            <Zap size={14} /> Kosongkan Data Backtest
           </button>
         </div>
       </div>
@@ -358,10 +362,10 @@ function AgentTab({ agentOn, onToggle, onReset }) {
         <div className="panel-header"><h3>Cara Kerja</h3></div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {[
-            { title: 'Pemindaian Pasar', text: 'Agent memantau token memecoin Solana real-time, menilai struktur, momentum, dan risiko — hanya yang lolos filter yang jadi sinyal.' },
-            { title: 'Sinyal Bergrade', text: 'Grade A+/A jadi sinyal entry utama. Hanya sebagian kecil grade B terbaik (High Risk) yang lolos — diseleksi ketat untuk meminimalkan kekalahan. Grade C disaring otomatis.' },
-            { title: 'Backtest Otomatis', text: 'Sinyal A+/A di-entry virtual di harga live, lalu dilacak. Sentuh TP → WIN, sentuh SL → LOSS. Tanpa eksekusi on-chain.' },
-            { title: 'Penjelasan Lengkap', text: 'Klik kartu sinyal untuk narasi penuh: kenapa entry, global fees, integritas volume, holder, rug/runner, dan prinsip Ponyin.' },
+            { title: 'Pemindaian Pasar', text: 'Agent membaca token memecoin Solana dari data pasar, lalu menilai struktur, momentum, likuiditas, dan risiko dasar.' },
+            { title: 'Seleksi Bertingkat', text: 'Grade A+/A menjadi prioritas utama. Grade B hanya ditampilkan jika lolos gerbang tambahan yang lebih ketat untuk menekan risiko loss.' },
+            { title: 'Backtest Otomatis', text: 'Sinyal yang lolos di-entry virtual pada harga live, kemudian dipantau sampai TP atau SL tanpa eksekusi on-chain.' },
+            { title: 'Transparansi Analisa', text: 'Klik kartu sinyal untuk membaca alasan lengkap: entry, integritas volume, holder, rug/runner, dan keyakinan data.' },
           ].map((item) => (
             <div key={item.title} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
               <div className="feature-icon" style={{ flex: '0 0 auto' }}><Bot size={18} /></div>

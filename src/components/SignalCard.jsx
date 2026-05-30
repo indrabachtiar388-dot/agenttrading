@@ -3,16 +3,16 @@ import { TrendingUp, AlertTriangle, ArrowRight, Copy, Check, LineChart, Droplets
 import { formatUsd, shortAddr } from '../data/autoTrader';
 
 const GRADE_META = {
-  'A+': { cls: 'grade-aplus', caption: 'Entry Kuat', color: 'var(--green)' },
-  A: { cls: 'grade-a', caption: 'Entry', color: 'var(--cyan)' },
-  B: { cls: 'grade-b', caption: 'High Risk', color: 'var(--amber)' },
+  'A+': { cls: 'grade-aplus', caption: 'Prioritas Tertinggi', color: 'var(--green)' },
+  A: { cls: 'grade-a', caption: 'Layak Dipantau', color: 'var(--cyan)' },
+  B: { cls: 'grade-b', caption: 'Selektif', color: 'var(--amber)' },
 };
 
 function gradeStyle(grade) {
-  if (grade === 'A+') return { background: 'rgba(34,197,94,0.18)', color: 'var(--green)', border: '1px solid rgba(34,197,94,0.4)' };
-  if (grade === 'A') return { background: 'rgba(6,182,212,0.14)', color: 'var(--cyan)', border: '1px solid rgba(6,182,212,0.35)' };
-  if (grade === 'B') return { background: 'rgba(245,158,11,0.16)', color: 'var(--amber)', border: '1px solid rgba(245,158,11,0.4)' };
-  return { background: 'rgba(239,68,68,0.14)', color: 'var(--red)', border: '1px solid rgba(239,68,68,0.35)' };
+  if (grade === 'A+') return { background: 'rgba(22,163,74,0.10)', color: 'var(--green)', border: '1px solid rgba(22,163,74,0.25)' };
+  if (grade === 'A') return { background: 'rgba(37,99,235,0.10)', color: 'var(--cyan)', border: '1px solid rgba(37,99,235,0.25)' };
+  if (grade === 'B') return { background: 'rgba(217,119,6,0.10)', color: 'var(--amber)', border: '1px solid rgba(217,119,6,0.25)' };
+  return { background: 'rgba(220,38,38,0.08)', color: 'var(--red)', border: '1px solid rgba(220,38,38,0.20)' };
 }
 
 function statusChip(trade) {
@@ -67,8 +67,8 @@ export default function SignalCard({ signal, trade, onClick }) {
 
       <div className="sc-tags">
         {isHighRisk ? (
-          <span className="badge" style={{ background: 'rgba(245,158,11,0.16)', color: 'var(--amber)', border: '1px solid rgba(245,158,11,0.4)' }}>
-            <AlertTriangle size={12} /> HIGH RISK
+          <span className="badge" style={{ background: 'rgba(217,119,6,0.10)', color: 'var(--amber)', border: '1px solid rgba(217,119,6,0.25)' }}>
+            <AlertTriangle size={12} /> SELEKTIF
           </span>
         ) : (
           <span className="badge badge-buy"><TrendingUp size={12} /> BUY</span>

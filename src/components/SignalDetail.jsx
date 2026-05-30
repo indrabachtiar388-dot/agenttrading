@@ -229,7 +229,7 @@ export default function SignalDetail({ signal, trade, onClose }) {
         </Section>
 
         <p className="sd-disclaimer">
-          Mode backtest — sinyal & PnL ini simulasi otomatis dari data live, bukan eksekusi on-chain. Tetap DYOR.
+          Mode backtest: sinyal dan PnL adalah simulasi otomatis dari data live, bukan eksekusi on-chain. Tetap lakukan riset mandiri (DYOR).
         </p>
       </aside>
     </div>

@@ -13,7 +13,7 @@ const FEED_GRADES = new Set(['A+', 'A', 'B']);
 /* Grade yang otomatis di-entry & dilacak. */
 const TRACKED_GRADES = new Set(['A+', 'A', 'B']);
 /* Grade B = High Risk: hanya "best of the best" yang diloloskan, dibatasi jumlahnya. */
-const MAX_B_SIGNALS = 3;
+const MAX_B_SIGNALS = 1;
 /* Jeda sebelum token yang sama boleh di-entry ulang setelah ditutup. */
 const REENTRY_COOLDOWN_MS = 5 * 60 * 1000;
 
@@ -102,27 +102,27 @@ function gradeSignal(token, report, rug, runner) {
     grade = 'C';
     side = 'SELL';
     confidence = 96;
-    reasons.push('Token terdeteksi bermasalah kritis — hindari');
+    reasons.push('Token terdeteksi bermasalah kritis — hindari entry');
   } else if (checks.scoreHigh && checks.noRug && checks.notDead && checks.runnerScoreHigh && checks.confidence && checks.liquidityOk && checks.momentum && checks.buyPressure && checks.volumeSehat && checks.noFreeze && checks.noOpenMint && checks.concentrationOk) {
     grade = 'A+';
     side = 'BUY';
     confidence = Math.min(98, Math.round(report.score + 12));
-    reasons.push('Setup sangat kuat — momentum, struktur, dan risiko ideal');
+    reasons.push('Setup kuat: momentum, struktur, dan risiko paling seimbang');
   } else if (checks.scoreOk && checks.noRug && checks.notDead && checks.runnerScoreOk && checks.confidence && checks.liquidityOk && checks.momentum && checks.buyPressure && checks.noFreeze && checks.noOpenMint) {
     grade = 'A';
     side = 'BUY';
     confidence = Math.min(92, Math.round(report.score + 6));
-    reasons.push('Setup bagus dengan risiko terkendali');
+    reasons.push('Setup bagus: risiko masih terukur dan layak dipantau');
   } else if (checks.scoreMin && checks.noRug && checks.notDead && checks.confidenceMin && checks.liquidityOk) {
     grade = 'B';
     side = 'HOLD';
     confidence = Math.round(report.score * 0.9);
-    reasons.push('Kondisi menarik tapi belum ideal untuk entry otomatis');
+    reasons.push('Kondisi menarik tapi belum memenuhi standar entry prioritas');
   } else {
     grade = 'C';
     side = 'SELL';
     confidence = Math.round(Math.max(40, 80 - passed * 2));
-    reasons.push('Kondisi tidak memenuhi kriteria entry — hindari');
+    reasons.push('Kondisi tidak memenuhi kriteria seleksi — hindari entry');
   }
 
   return { grade, side, confidence, reasons, checks, passed };
@@ -305,14 +305,14 @@ function isQualityB(s) {
   const riskLevel = ex.riskNarrative?.level || 'low';
   const runner = Number(ex.runnerSummary?.score || 0);
   const vol = Number(ex.volumeIntegrity || 0);
-  return Number(s.confidence) >= 58
-    && Number(s.score) >= 52
+  return Number(s.confidence) >= 65
+    && Number(s.score) >= 58
     && riskLevel === 'low'
-    && runner >= 40
-    && vol >= 55
-    && Number(s.m5) >= 0
-    && Number(s.h1) >= -3
-    && Number(s.liquidityUsd) >= 18000;
+    && runner >= 50
+    && vol >= 62
+    && Number(s.m5) >= 1
+    && Number(s.h1) >= -1
+    && Number(s.liquidityUsd) >= 25000;
 }
 
 function sortSignals(a, b) {

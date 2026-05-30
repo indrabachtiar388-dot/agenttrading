@@ -58,7 +58,7 @@ export default function LandingPage({ onLogin }) {
           <div className="landing-brand-mark">AI</div>
           <div className="landing-brand-text">
             <strong>MemeAgent</strong>
-            <small>Sinyal & Backtest Solana</small>
+            <small>Signal Intelligence Solana</small>
           </div>
         </div>
         <span className="landing-status">Engine Online</span>
@@ -68,12 +68,13 @@ export default function LandingPage({ onLogin }) {
         <div className="landing-hero-copy">
           <span className="landing-eyebrow">Solana Memecoin Signal Engine</span>
           <h1>
-            Sinyal Memecoin yang <span>Bisa Kamu Pahami</span>.
+            Sinyal Transparan untuk <span>Growth Berkelanjutan</span>.
           </h1>
           <p>
-            Engine memindai pasar memecoin Solana, menyaring setup terbaik, dan
-            menjelaskan alasannya — entry, stop loss, take profit, hingga analisa
-            risiko. Semua dilacak otomatis dalam mode backtest.
+            Engine membaca pasar memecoin Solana secara real-time, menyaring setup
+            dengan seleksi bertingkat, dan menjelaskan dasar keputusannya — mulai dari
+            entry, stop loss, take profit, hingga analisa risiko. Semua dilacak dalam
+            mode backtest untuk membangun kepercayaan sebelum eksekusi real-time.
           </p>
 
           <div className="landing-cta">
@@ -86,8 +87,8 @@ export default function LandingPage({ onLogin }) {
             </button>
           </div>
           <p className="landing-cta-note">
-            <strong>Mode backtest — bukan eksekusi on-chain.</strong> Sinyal & PnL adalah
-            simulasi dari data live untuk riset. Bukan saran finansial, selalu DYOR.
+            <strong>Mode backtest — bukan eksekusi on-chain.</strong> Sinyal dan PnL adalah
+            simulasi dari data live untuk riset. Bukan saran finansial, selalu lakukan riset mandiri (DYOR).
           </p>
         </div>
 
@@ -153,11 +154,11 @@ export default function LandingPage({ onLogin }) {
 
       <section style={{ textAlign: 'center', padding: '24px 0' }}>
         <h2 style={{ margin: '0 0 10px', fontSize: 'clamp(1.6rem, 3vw, 2.2rem)' }}>
-          Sinyal yang Transparan
+          Sinyal yang Bisa Dipertanggungjawabkan
         </h2>
         <p style={{ color: 'var(--muted)', maxWidth: 540, margin: '0 auto 22px' }}>
-          Tanpa kotak hitam. Setiap keputusan engine bisa dibaca alasannya, lengkap
-          dengan metrik dan deteksi risikonya. Kamu yang menilai, engine yang memindai.
+          Tanpa kotak hitam. Setiap keputusan engine disertai dasar analisa, metrik,
+          dan deteksi risiko yang transparan. Engine memindai, trader yang menilai.
         </p>
         <button type="button" className="btn-primary" onClick={onLogin}>
           <Activity size={18} />
@@ -166,8 +167,8 @@ export default function LandingPage({ onLogin }) {
       </section>
 
       <footer className="landing-footer">
-        <span>MemeAgent · Sinyal & Backtest Solana</span>
-        <span>Data dan sinyal bukan saran finansial. Selalu pahami risiko trading.</span>
+        <span>MemeAgent · Signal Intelligence Solana</span>
+        <span>Data dan sinyal bukan saran finansial. Selalu pahami risiko sebelum memutuskan.</span>
       </footer>
     </div>
   );
