@@ -1,0 +1,499 @@
+import { analyzeToken } from './apeEngine';
+import { analyzeRug } from './rugDetector';
+import { analyzeRunner } from './runnerDetector';
+import { pushSnapshot } from './snapshotStore';
+import { buildSignalExplain } from './signalNarrative';
+import { fetchDiscoveryFeed, fetchTokenMarketSnapshots, fetchTokenSnapshot } from './liveProviders';
+
+const TRADES_KEY = 'ma_backtest';
+const SIGNALS_KEY = 'ma_signals';
+
+/* Grade yang ditampilkan di feed (C disembunyikan). */
+const FEED_GRADES = new Set(['A+', 'A', 'B']);
+/* Grade yang otomatis di-entry & dilacak. */
+const TRACKED_GRADES = new Set(['A+', 'A', 'B']);
+/* Grade B = High Risk: hanya "best of the best" yang diloloskan, dibatasi jumlahnya. */
+const MAX_B_SIGNALS = 3;
+/* Jeda sebelum token yang sama boleh di-entry ulang setelah ditutup. */
+const REENTRY_COOLDOWN_MS = 5 * 60 * 1000;
+
+function loadTrades() {
+  try {
+    const raw = localStorage.getItem(TRADES_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+function saveTrades(list) {
+  localStorage.setItem(TRADES_KEY, JSON.stringify(list));
+}
+function loadSignals() {
+  try {
+    const raw = localStorage.getItem(SIGNALS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+function saveSignals(list) {
+  localStorage.setItem(SIGNALS_KEY, JSON.stringify(list));
+}
+
+export function formatUsd(value) {
+  const num = Number(value || 0);
+  if (!Number.isFinite(num) || num <= 0) return '$0';
+  if (num >= 1_000_000) return `$${(num / 1_000_000).toFixed(num >= 10_000_000 ? 0 : 1)}M`;
+  if (num >= 1_000) return `$${(num / 1_000).toFixed(num >= 100_000 ? 0 : 1)}K`;
+  if (num < 0.01) {
+    const s = num.toFixed(10).replace(/0+$/, '').replace(/\.$/, '');
+    return `$${s}`;
+  }
+  return `$${num.toFixed(num >= 10 ? 0 : 2)}`;
+}
+
+export function shortAddr(a) {
+  if (!a) return '-';
+  return `${a.slice(0, 4)}...${a.slice(-4)}`.toUpperCase();
+}
+
+/* ─── Signal Grading ─────────────────────────────────────────────────────── */
+/* CATATAN: logika analisa/skoring di bawah TIDAK diubah dari versi sebelumnya. */
+function gradeSignal(token, report, rug, runner) {
+  const price = Number(token.priceUsd || 0);
+  const liquidity = Number(token.liquidityUsd || 0);
+  const flags = token.flags || {};
+  const m5 = Number(token.priceChange?.m5 || 0);
+  const h1 = Number(token.priceChange?.h1 || 0);
+  const txns5m = Number(flags.txns5m || 0);
+  const buys5m = Number(flags.buys5m || 0);
+  const sells5m = Number(flags.sells5m || 0);
+  const totalTx = buys5m + sells5m;
+  const buyRatio = totalTx > 0 ? buys5m / totalTx : 0.5;
+  const volume5m = Number(flags.reportedVolume || 0);
+  const volLiqRatio = Number(flags.volumeLiquidityRatio || 0);
+  const isBonding = token.phase === 'new' || String(token.lpStatus || '').toLowerCase().includes('bonding');
+
+  const checks = {
+    scoreHigh: report.score >= 75,
+    scoreOk: report.score >= 60,
+    scoreMin: report.score >= 45,
+    noRug: !rug.isRugged && rug.level !== 'critical' && rug.level !== 'high',
+    notDead: !rug.isDead,
+    runnerScoreHigh: runner.runnerScore >= 50,
+    runnerScoreOk: runner.runnerScore >= 30,
+    confidence: report.confidence >= 50,
+    confidenceMin: report.confidence >= 40,
+    liquidityOk: isBonding ? true : liquidity >= 12000,
+    bondingActive: isBonding ? txns5m >= 8 : true,
+    momentum: m5 >= -5 && h1 >= -12,
+    buyPressure: buyRatio >= 0.52 && buys5m >= 3,
+    volumeSehat: volLiqRatio < 6 && volume5m > 0,
+    noFreeze: flags.freezeActive !== true,
+    noOpenMint: flags.mintRevoked !== false,
+    concentrationOk: flags.top10Pct == null || flags.top10Pct < 58,
+    noBlacklist: flags.madeOnSolBlacklisted !== true,
+  };
+
+  const passed = Object.values(checks).filter(Boolean).length;
+
+  let grade = 'C';
+  let side = 'SELL';
+  let confidence = 0;
+  let reasons = [];
+
+  if (checks.noBlacklist && (rug.isRugged || rug.level === 'critical')) {
+    grade = 'C';
+    side = 'SELL';
+    confidence = 96;
+    reasons.push('Token terdeteksi bermasalah kritis — hindari');
+  } else if (checks.scoreHigh && checks.noRug && checks.notDead && checks.runnerScoreHigh && checks.confidence && checks.liquidityOk && checks.momentum && checks.buyPressure && checks.volumeSehat && checks.noFreeze && checks.noOpenMint && checks.concentrationOk) {
+    grade = 'A+';
+    side = 'BUY';
+    confidence = Math.min(98, Math.round(report.score + 12));
+    reasons.push('Setup sangat kuat — momentum, struktur, dan risiko ideal');
+  } else if (checks.scoreOk && checks.noRug && checks.notDead && checks.runnerScoreOk && checks.confidence && checks.liquidityOk && checks.momentum && checks.buyPressure && checks.noFreeze && checks.noOpenMint) {
+    grade = 'A';
+    side = 'BUY';
+    confidence = Math.min(92, Math.round(report.score + 6));
+    reasons.push('Setup bagus dengan risiko terkendali');
+  } else if (checks.scoreMin && checks.noRug && checks.notDead && checks.confidenceMin && checks.liquidityOk) {
+    grade = 'B';
+    side = 'HOLD';
+    confidence = Math.round(report.score * 0.9);
+    reasons.push('Kondisi menarik tapi belum ideal untuk entry otomatis');
+  } else {
+    grade = 'C';
+    side = 'SELL';
+    confidence = Math.round(Math.max(40, 80 - passed * 2));
+    reasons.push('Kondisi tidak memenuhi kriteria entry — hindari');
+  }
+
+  return { grade, side, confidence, reasons, checks, passed };
+}
+
+function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+function round1(v) { return Math.round(v * 10) / 10; }
+
+/**
+ * SL/TP RELATIF — dihitung dari profil tiap token, bukan persentase konstan.
+ * Faktor: volatilitas (pergerakan harga + rasio vol/likuiditas), kedalaman
+ * likuiditas, momentum H1, runner score, grade, dan keyakinan. Token volatil /
+ * likuiditas tipis dapat SL lebih lebar (hindari ke-stop noise); momentum &
+ * runner kuat menaikkan target TP (biarkan pemenang lari).
+ */
+function deriveSlTp({ grade, confidence, token, runner }) {
+  const flags = token.flags || {};
+  const m5 = Math.abs(Number(token.priceChange?.m5 ?? token.m5 ?? 0));
+  const h1 = Number(token.priceChange?.h1 ?? token.h1 ?? 0);
+  const liq = Number(token.liquidityUsd || 0);
+  const runnerScore = Number(runner?.runnerScore || 0);
+  const volLiqRatio = Number(flags.volumeLiquidityRatio || 0);
+
+  // Proxy volatilitas (0..40)
+  const volatility = clamp(m5 * 0.8 + Math.abs(h1) * 0.25 + volLiqRatio * 1.5, 0, 40);
+
+  // Stop loss: makin tinggi grade makin ketat; melebar saat volatil / LP tipis
+  let slPct = grade === 'A+' ? 8 : grade === 'A' ? 11 : 15;
+  slPct += volatility * 0.35;
+  if (liq > 0 && liq < 15000) slPct += 4;
+  else if (liq > 0 && liq < 40000) slPct += 2;
+  slPct = clamp(slPct, 6, 26);
+
+  // Risk:reward dari konviksi + momentum + runner + keyakinan
+  let rr = grade === 'A+' ? 3.0 : grade === 'A' ? 2.4 : 1.9;
+  if (h1 > 25) rr += 0.5;
+  else if (h1 < -5) rr -= 0.3;
+  rr += Math.min(0.8, runnerScore / 100);
+  rr += clamp((confidence - 60) / 100, -0.3, 0.4);
+  rr = clamp(rr, 1.4, 4.0);
+
+  let tpPct = slPct * rr + volatility * 0.4;
+  tpPct = clamp(tpPct, 12, 90);
+
+  return { slPct: round1(slPct), tpPct: round1(tpPct), rr: round1(rr), volatility: round1(volatility) };
+}
+
+function chartUrlFor(token) {
+  return token.url || token.pairUrl || `https://dexscreener.com/solana/${token.ca}`;
+}
+
+function buildSignal(token, report, rug, runner) {
+  const price = Number(token.priceUsd || 0);
+  const { grade, side, confidence, reasons } = gradeSignal(token, report, rug, runner);
+
+  const entry = price > 0 ? price : null;
+  const { slPct, tpPct, rr } = deriveSlTp({ grade, confidence, token, runner });
+  let sl = null;
+  let tp = null;
+  if (entry) {
+    sl = entry * (1 - slPct / 100);
+    tp = entry * (1 + tpPct / 100);
+  }
+
+  const explain = buildSignalExplain({ token, report, rug, runner, grade, side, reasons, entry, sl, tp, tpPct, slPct, rr });
+
+  return {
+    id: token.ca,
+    ca: token.ca,
+    ticker: token.ticker || shortAddr(token.ca),
+    name: token.name || 'Unknown',
+    phase: token.phase || 'new',
+    grade,
+    side,
+    confidence,
+    reasons,
+    score: report.score,
+    entry,
+    sl,
+    tp,
+    slPct,
+    tpPct,
+    rr,
+    priceUsd: price,
+    liquidityUsd: Number(token.liquidityUsd || 0),
+    age: token.age ?? null,
+    ageMinutes: token.ageMinutes ?? null,
+    m5: token.priceChange?.m5 ?? 0,
+    h1: token.priceChange?.h1 ?? 0,
+    url: chartUrlFor(token),
+    tracked: TRACKED_GRADES.has(grade),
+    explain,
+    updatedAt: Date.now()
+  };
+}
+
+function computeSignal(token) {
+  pushSnapshot(token.ca, token);
+  const report = analyzeToken(token);
+  const rug = analyzeRug(token);
+  const runner = analyzeRunner(token);
+  return buildSignal(token, report, rug, runner);
+}
+
+function reevaluateSignal(signal, liveToken) {
+  pushSnapshot(liveToken.ca, liveToken);
+  const report = analyzeToken(liveToken);
+  const rug = analyzeRug(liveToken);
+  const runner = analyzeRunner(liveToken);
+
+  const price = Number(liveToken.priceUsd || signal.priceUsd);
+  const { grade, side, confidence, reasons } = gradeSignal(liveToken, report, rug, runner);
+
+  // Entry dikunci di harga pertama sinyal terbentuk (biar PnL berjalan konsisten).
+  const entry = signal.entry || (price > 0 ? price : null);
+  const { slPct, tpPct, rr } = deriveSlTp({ grade, confidence, token: liveToken, runner });
+  let sl = signal.sl;
+  let tp = signal.tp;
+  if (entry) {
+    sl = entry * (1 - slPct / 100);
+    tp = entry * (1 + tpPct / 100);
+  }
+
+  const explain = buildSignalExplain({
+    token: liveToken, report, rug, runner, grade, side, reasons, entry, sl, tp, tpPct, slPct, rr
+  });
+
+  return {
+    ...signal,
+    priceUsd: price,
+    liquidityUsd: Number(liveToken.liquidityUsd || signal.liquidityUsd),
+    m5: liveToken.priceChange?.m5 ?? signal.m5,
+    h1: liveToken.priceChange?.h1 ?? signal.h1,
+    grade,
+    side,
+    confidence,
+    reasons,
+    score: report.score,
+    entry: entry || signal.entry,
+    sl: sl || signal.sl,
+    tp: tp || signal.tp,
+    slPct,
+    tpPct,
+    rr,
+    url: liveToken.url || signal.url,
+    tracked: TRACKED_GRADES.has(grade),
+    explain,
+    updatedAt: Date.now()
+  };
+}
+
+const gradeRank = { 'A+': 4, A: 3, B: 2, C: 1 };
+
+/**
+ * Edge score — skor kualitas komposit untuk merangking sinyal & menyeleksi B.
+ * Menggabungkan skor engine, keyakinan, runner, integritas volume, momentum,
+ * dikurangi penalti risiko rug. Makin tinggi = makin layak dipertahankan.
+ */
+function signalEdge(s) {
+  const ex = s.explain || {};
+  const runner = Number(ex.runnerSummary?.score || 0);
+  const vol = Number(ex.volumeIntegrity || 0);
+  const riskPenalty = { low: 0, medium: 14, high: 34, critical: 70 }[ex.riskNarrative?.level || 'low'] || 0;
+  const momentum = (Number(s.m5) || 0) * 0.6 + clamp(Number(s.h1) || 0, -25, 45) * 0.2;
+  return (Number(s.score) || 0) * 0.5
+    + (Number(s.confidence) || 0) * 0.3
+    + runner * 0.25
+    + vol * 0.15
+    + momentum
+    - riskPenalty;
+}
+
+/**
+ * Gerbang kualitas grade B (High Risk) — sangat ketat untuk meminimalkan kalah.
+ * Hanya B dengan struktur bersih, momentum tidak negatif, likuiditas memadai,
+ * volume kredibel, dan risiko rug rendah yang boleh muncul.
+ */
+function isQualityB(s) {
+  const ex = s.explain || {};
+  const riskLevel = ex.riskNarrative?.level || 'low';
+  const runner = Number(ex.runnerSummary?.score || 0);
+  const vol = Number(ex.volumeIntegrity || 0);
+  return Number(s.confidence) >= 58
+    && Number(s.score) >= 52
+    && riskLevel === 'low'
+    && runner >= 40
+    && vol >= 55
+    && Number(s.m5) >= 0
+    && Number(s.h1) >= -3
+    && Number(s.liquidityUsd) >= 18000;
+}
+
+function sortSignals(a, b) {
+  if (gradeRank[b.grade] !== gradeRank[a.grade]) return gradeRank[b.grade] - gradeRank[a.grade];
+  return signalEdge(b) - signalEdge(a);
+}
+
+/**
+ * Pindai feed → hitung sinyal → A+/A diutamakan, grade B hanya "best of best"
+ * (dibatasi MAX_B_SIGNALS) → auto-track yang lolos.
+ */
+export async function refreshSignals({ autoTrack = true } = {}) {
+  try {
+    const feed = await fetchDiscoveryFeed();
+    const tokens = feed.tokens || [];
+    const computed = tokens
+      .slice(0, 30)
+      .map(computeSignal)
+      .filter((s) => FEED_GRADES.has(s.grade));
+
+    const primary = computed.filter((s) => s.grade === 'A+' || s.grade === 'A');
+    const bestB = computed
+      .filter((s) => s.grade === 'B' && isQualityB(s))
+      .sort((x, y) => signalEdge(y) - signalEdge(x))
+      .slice(0, MAX_B_SIGNALS);
+
+    const signals = [...primary, ...bestB].sort(sortSignals);
+
+    saveSignals(signals);
+    if (autoTrack) {
+      signals.filter((s) => s.tracked).forEach(openBacktestTrade);
+    }
+    return signals;
+  } catch (e) {
+    return loadSignals();
+  }
+}
+
+/* ─── Real-time Price Poll ──────────────────────────────────────────────── */
+export async function pollPrices(addresses) {
+  const unique = [...new Set(addresses.filter(Boolean))];
+  if (!unique.length) return [];
+  try {
+    return await fetchTokenMarketSnapshots(unique);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Terapkan harga live ke sinyal (re-evaluasi) dan ke trade backtest (resolve WIN/LOSS).
+ */
+export function applyPriceUpdates(signals, trades, liveTokens) {
+  const map = new Map(liveTokens.map((t) => [t.ca, t]));
+
+  const updatedSignals = signals.map((s) => {
+    const live = map.get(s.ca);
+    if (!live) return { ...s };
+    return reevaluateSignal(s, live);
+  });
+
+  let tradesChanged = false;
+  const updatedTrades = trades.map((t) => {
+    if (t.status !== 'ACTIVE') return t;
+    const live = map.get(t.ca);
+    if (!live) return t;
+
+    // Segarkan snapshot narasi (entry/SL/TP tetap dikunci di nilai trade).
+    const snapshot = t.signal ? reevaluateSignal(t.signal, live) : t.signal;
+    const currentPrice = Number(live.priceUsd) > 0 ? Number(live.priceUsd) : null;
+    if (!currentPrice || !t.entry) {
+      tradesChanged = true;
+      return { ...t, signal: snapshot };
+    }
+
+    const pnlPct = ((currentPrice - t.entry) / t.entry) * 100;
+    if (currentPrice <= t.sl) {
+      tradesChanged = true;
+      return { ...t, status: 'LOSS', closedAt: Date.now(), closePrice: currentPrice, pnlPct, signal: snapshot };
+    }
+    if (currentPrice >= t.tp) {
+      tradesChanged = true;
+      return { ...t, status: 'WIN', closedAt: Date.now(), closePrice: currentPrice, pnlPct, signal: snapshot };
+    }
+    tradesChanged = true;
+    return { ...t, pnlPct, lastPrice: currentPrice, signal: snapshot };
+  });
+
+  if (tradesChanged) saveTrades(updatedTrades);
+  saveSignals(updatedSignals);
+  return { signals: updatedSignals, trades: updatedTrades };
+}
+
+export function getCachedSignals() {
+  return loadSignals();
+}
+
+/* ─── Backtest Trades ───────────────────────────────────────────────────── */
+export function getBacktestTrades() {
+  return loadTrades();
+}
+
+/**
+ * Buka trade backtest virtual (tanpa saldo). Hanya untuk grade A+/A,
+ * satu trade aktif per token. Mengembalikan trade baru atau null.
+ */
+export function openBacktestTrade(signal) {
+  if (!signal || !TRACKED_GRADES.has(signal.grade)) return null;
+  if (!signal.entry || !signal.sl || !signal.tp) return null;
+
+  const trades = loadTrades();
+  if (trades.some((t) => t.ca === signal.ca && t.status === 'ACTIVE')) return null;
+
+  // Cooldown: jangan entry ulang token yang baru saja ditutup.
+  const lastClosed = trades.find((t) => t.ca === signal.ca && t.closedAt);
+  if (lastClosed && Date.now() - lastClosed.closedAt < REENTRY_COOLDOWN_MS) return null;
+
+  const trade = {
+    id: 'bt_' + Math.random().toString(36).slice(2, 9),
+    ca: signal.ca,
+    ticker: signal.ticker,
+    name: signal.name,
+    grade: signal.grade,
+    side: signal.side,
+    entry: signal.entry,
+    sl: signal.sl,
+    tp: signal.tp,
+    slPct: signal.slPct,
+    tpPct: signal.tpPct,
+    rr: signal.rr,
+    status: 'ACTIVE',
+    openedAt: Date.now(),
+    closedAt: null,
+    closePrice: null,
+    lastPrice: signal.priceUsd || signal.entry,
+    pnlPct: 0,
+    signal: { ...signal }
+  };
+  trades.unshift(trade);
+  saveTrades(trades);
+  return trade;
+}
+
+/** Statistik backtest dari trade yang sudah selesai (WIN/LOSS). */
+export function getBacktestStats() {
+  const trades = loadTrades();
+  const closed = trades.filter((t) => t.status === 'WIN' || t.status === 'LOSS');
+  const wins = closed.filter((t) => t.status === 'WIN');
+  const losses = closed.filter((t) => t.status === 'LOSS');
+  const active = trades.filter((t) => t.status === 'ACTIVE');
+
+  const avg = (list) => (list.length ? list.reduce((s, t) => s + (t.pnlPct || 0), 0) / list.length : 0);
+  const winRate = closed.length ? (wins.length / closed.length) * 100 : 0;
+  const avgWinPct = avg(wins);
+  const avgLossPct = avg(losses);
+  const lossRate = closed.length ? (losses.length / closed.length) * 100 : 0;
+  const expectancy = closed.length
+    ? (winRate / 100) * avgWinPct + (lossRate / 100) * avgLossPct
+    : 0;
+  const allPct = closed.map((t) => t.pnlPct || 0);
+  const totalPnlPct = allPct.reduce((s, v) => s + v, 0);
+
+  return {
+    total: closed.length,
+    active: active.length,
+    wins: wins.length,
+    losses: losses.length,
+    winRate,
+    avgWinPct,
+    avgLossPct,
+    expectancy,
+    totalPnlPct,
+    bestPct: allPct.length ? Math.max(...allPct) : 0,
+    worstPct: allPct.length ? Math.min(...allPct) : 0
+  };
+}
+
+export function resetBacktest() {
+  saveTrades([]);
+}
+
+export function scanDeep(ca) {
+  return fetchTokenSnapshot(ca);
+}

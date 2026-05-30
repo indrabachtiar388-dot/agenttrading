@@ -1,0 +1,378 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  LogOut, RefreshCw, Activity, TrendingUp, Trophy, Settings, Bot, Zap
+} from 'lucide-react';
+import { useAuth } from '../hooks/useAuth.jsx';
+import {
+  refreshSignals,
+  pollPrices,
+  applyPriceUpdates,
+  getCachedSignals,
+  getBacktestTrades,
+  getBacktestStats,
+  resetBacktest,
+} from '../data/autoTrader';
+import SignalCard from '../components/SignalCard.jsx';
+import SignalDetail from '../components/SignalDetail.jsx';
+import PerformancePanel from '../components/PerformancePanel.jsx';
+import BacktestHistory from '../components/BacktestHistory.jsx';
+
+const TABS = [
+  { key: 'signals', label: 'Sinyal Live', icon: Activity },
+  { key: 'history', label: 'Riwayat', icon: TrendingUp },
+  { key: 'performance', label: 'Performa', icon: Trophy },
+  { key: 'agent', label: 'Agent', icon: Settings },
+];
+
+export default function Dashboard({ onLogout }) {
+  const { user } = useAuth();
+  const [tab, setTab] = useState('signals');
+  const [signals, setSignals] = useState(() => getCachedSignals());
+  const [trades, setTrades] = useState(() => getBacktestTrades());
+  const [scanning, setScanning] = useState(false);
+  const [agentOn, setAgentOn] = useState(() => localStorage.getItem('ma_agent_on') !== 'false');
+  const [selectedCa, setSelectedCa] = useState(null);
+  const [toast, setToast] = useState('');
+  const [lastPriceUpdate, setLastPriceUpdate] = useState(null);
+
+  const agentOnRef = useRef(agentOn);
+  agentOnRef.current = agentOn;
+
+  const tradesMap = useMemo(() => {
+    const m = new Map();
+    trades.filter((t) => t.status === 'ACTIVE').forEach((t) => m.set(t.ca, t));
+    return m;
+  }, [trades]);
+
+  // Feed yang ditampilkan = trade aktif (tetap tampil sampai SL/TP) digabung
+  // sinyal baru dari scan. Trade aktif tidak hilang walau keluar dari discovery.
+  const displaySignals = useMemo(() => {
+    const rank = { 'A+': 4, A: 3, B: 2, C: 1 };
+    const byCa = new Map();
+    trades.filter((t) => t.status === 'ACTIVE').forEach((t) => {
+      const sig = t.signal || {
+        id: t.ca, ca: t.ca, ticker: t.ticker, name: t.name, grade: t.grade, side: t.side,
+        confidence: 0, reasons: [], score: 0, priceUsd: t.lastPrice, entry: t.entry,
+        sl: t.sl, tp: t.tp, slPct: t.slPct, tpPct: t.tpPct, url: null, tracked: true, explain: {}
+      };
+      byCa.set(t.ca, sig);
+    });
+    signals.forEach((s) => { if (!byCa.has(s.ca)) byCa.set(s.ca, s); });
+    return Array.from(byCa.values()).sort((a, b) =>
+      (rank[b.grade] || 0) - (rank[a.grade] || 0) || (b.confidence || 0) - (a.confidence || 0));
+  }, [trades, signals]);
+
+  const stats = useMemo(() => getBacktestStats(), [trades]);
+
+  const counts = useMemo(() => ({
+    total: displaySignals.length,
+    buy: displaySignals.filter((s) => s.side === 'BUY').length,
+    highRisk: displaySignals.filter((s) => s.grade === 'B').length,
+  }), [displaySignals]);
+
+  const handleRefreshSignals = async () => {
+    setScanning(true);
+    const s = await refreshSignals({ autoTrack: agentOnRef.current });
+    setSignals(s);
+    setTrades(getBacktestTrades());
+    setScanning(false);
+  };
+
+  // Initial load
+  useEffect(() => {
+    handleRefreshSignals();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Refresh signal feed every 20s
+  useEffect(() => {
+    const timer = setInterval(() => { handleRefreshSignals(); }, 20000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Live price poll every 6s → update signals + resolve trade WIN/LOSS
+  useEffect(() => {
+    const runPoll = async () => {
+      const currentSignals = getCachedSignals();
+      const currentTrades = getBacktestTrades();
+      const cas = [...new Set([
+        ...currentSignals.map((s) => s.ca),
+        ...currentTrades.filter((t) => t.status === 'ACTIVE').map((t) => t.ca),
+      ])];
+      if (!cas.length) return;
+      try {
+        const liveTokens = await pollPrices(cas);
+        if (liveTokens.length) {
+          const { signals: nextSignals, trades: nextTrades } = applyPriceUpdates(currentSignals, currentTrades, liveTokens);
+          setSignals(nextSignals);
+          setTrades(nextTrades);
+          setLastPriceUpdate(Date.now());
+        }
+      } catch { /* abaikan */ }
+    };
+    runPoll();
+    const timer = setInterval(runPoll, 6000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const showToast = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast(''), 2500);
+  };
+
+  const toggleAgent = () => {
+    const next = !agentOn;
+    setAgentOn(next);
+    localStorage.setItem('ma_agent_on', String(next));
+    showToast(next ? 'Auto-track aktif — sinyal A+/A dilacak otomatis' : 'Auto-track dijeda');
+  };
+
+  const handleReset = () => {
+    resetBacktest();
+    setTrades(getBacktestTrades());
+    showToast('Riwayat backtest direset');
+  };
+
+  const selectedSignal = selectedCa
+    ? (displaySignals.find((s) => s.ca === selectedCa) || null)
+    : null;
+
+  return (
+    <div className="dashboard-shell">
+      <NavBar user={user} onLogout={onLogout} />
+
+      <div className="tab-bar">
+        {TABS.map(({ key, label, icon: Icon }) => (
+          <button key={key} className={tab === key ? 'active' : ''} onClick={() => setTab(key)}>
+            <Icon size={15} /> {label}
+            {key === 'history' && tradesMap.size > 0 && (
+              <span className="badge" style={{ marginLeft: 6, background: 'rgba(6,182,212,0.2)', color: 'var(--cyan)', border: 'none' }}>
+                {tradesMap.size}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'signals' && (
+        <SignalsTab
+          signals={displaySignals}
+          tradesMap={tradesMap}
+          counts={counts}
+          stats={stats}
+          scanning={scanning}
+          agentOn={agentOn}
+          lastPriceUpdate={lastPriceUpdate}
+          onRefresh={handleRefreshSignals}
+          onSelect={(s) => setSelectedCa(s.ca)}
+        />
+      )}
+      {tab === 'history' && (
+        <BacktestHistory trades={trades} onSelect={(t) => { setSelectedCa(t.ca); }} />
+      )}
+      {tab === 'performance' && (
+        <PerformancePanel stats={stats} trades={trades} onReset={handleReset} />
+      )}
+      {tab === 'agent' && (
+        <AgentTab agentOn={agentOn} onToggle={toggleAgent} onReset={handleReset} />
+      )}
+
+      {selectedSignal && (
+        <SignalDetail
+          signal={selectedSignal}
+          trade={tradesMap.get(selectedSignal.ca)}
+          onClose={() => setSelectedCa(null)}
+        />
+      )}
+
+      {toast && (
+        <div className="toast">{toast}</div>
+      )}
+    </div>
+  );
+}
+
+function NavBar({ user, onLogout }) {
+  return (
+    <nav className="site-nav">
+      <div className="brand">
+        <span>AI</span>
+        <div>
+          <strong>MemeAgent</strong>
+          <small>Sinyal & Backtest Solana</small>
+        </div>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div className="user-chip">
+          <div className="user-chip-avatar">{user?.name?.[0]?.toUpperCase() || 'T'}</div>
+          <span>{user?.name || 'Trader'}</span>
+        </div>
+        <button type="button" className="btn-secondary" style={{ padding: '8px 14px', fontSize: 13 }} onClick={onLogout}>
+          <LogOut size={14} /> Keluar
+        </button>
+      </div>
+    </nav>
+  );
+}
+
+const FEED_FILTERS = [
+  { key: 'all', label: 'Semua' },
+  { key: 'entry', label: 'Entry' },
+  { key: 'highrisk', label: 'High Risk' },
+  { key: 'active', label: 'Dilacak' },
+];
+
+function SignalsTab({ signals, tradesMap, counts, stats, scanning, agentOn, lastPriceUpdate, onRefresh, onSelect }) {
+  const [filter, setFilter] = useState('all');
+  const [showGuide, setShowGuide] = useState(false);
+
+  const filterCount = {
+    all: counts.total,
+    entry: counts.buy,
+    highrisk: counts.highRisk,
+    active: tradesMap.size,
+  };
+
+  const filtered = signals.filter((s) => {
+    if (filter === 'entry') return s.grade === 'A+' || s.grade === 'A';
+    if (filter === 'highrisk') return s.grade === 'B';
+    if (filter === 'active') return tradesMap.has(s.ca);
+    return true;
+  });
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div className="signal-summary">
+        <div className="ss-stat" title="Total sinyal yang ditampilkan saat ini"><span>Sinyal</span><strong>{counts.total}</strong></div>
+        <div className="ss-stat" title="Grade A+/A — setup layak entry"><span>Entry Layak</span><strong className="text-green">{counts.buy}</strong></div>
+        <div className="ss-stat" title="Grade B — entry spekulatif, diseleksi ketat"><span>High Risk</span><strong className="text-amber">{counts.highRisk}</strong></div>
+        <div className="ss-stat" title="Trade backtest yang sedang berjalan menuju TP/SL"><span>Dilacak</span><strong className="text-cyan">{tradesMap.size}</strong></div>
+        <div className="ss-stat" title="Persentase trade selesai yang menang"><span>Win Rate</span><strong className={stats.winRate >= 50 ? 'text-green' : 'text-red'}>{stats.total ? `${stats.winRate.toFixed(0)}%` : '—'}</strong></div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-header">
+          <h3>Sinyal Live</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {lastPriceUpdate && (
+              <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>
+                Harga update {Math.max(0, Math.round((Date.now() - lastPriceUpdate) / 1000))}d lalu
+              </span>
+            )}
+            {agentOn && (
+              <span className="scan-mini" style={{ padding: '6px 10px', fontSize: 12 }}>
+                <div className="spinner" style={{ width: 12, height: 12 }} />
+                Auto-track
+              </span>
+            )}
+            <button type="button" className="btn-secondary" style={{ padding: '8px 14px', fontSize: 13 }} onClick={onRefresh} disabled={scanning}>
+              <RefreshCw size={14} style={{ animation: scanning ? 'spin 1s linear infinite' : 'none' }} />
+              {scanning ? 'Memindai...' : 'Perbarui'}
+            </button>
+          </div>
+        </div>
+
+        <div className="feed-toolbar">
+          <div className="filter-chips">
+            {FEED_FILTERS.map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                className={`chip ${filter === f.key ? 'active' : ''}`}
+                onClick={() => setFilter(f.key)}
+              >
+                {f.label} <span className="chip-count">{filterCount[f.key]}</span>
+              </button>
+            ))}
+          </div>
+          <button type="button" className="guide-toggle" onClick={() => setShowGuide((v) => !v)}>
+            {showGuide ? 'Tutup panduan' : 'Apa arti grade?'}
+          </button>
+        </div>
+
+        {showGuide && (
+          <div className="feed-legend">
+            <div><span className="badge" style={{ background: 'rgba(34,197,94,0.18)', color: 'var(--green)', border: '1px solid rgba(34,197,94,0.4)' }}>A+</span> Entry kuat — struktur, momentum, risiko ideal.</div>
+            <div><span className="badge" style={{ background: 'rgba(6,182,212,0.14)', color: 'var(--cyan)', border: '1px solid rgba(6,182,212,0.35)' }}>A</span> Entry bagus dengan risiko terkendali.</div>
+            <div><span className="badge" style={{ background: 'rgba(245,158,11,0.16)', color: 'var(--amber)', border: '1px solid rgba(245,158,11,0.4)' }}>B</span> High Risk — spekulatif, diseleksi sangat ketat.</div>
+            <div><span className="sc-status active">DILACAK</span> di-entry virtual, menunggu TP/SL. <span className="sc-status win">WIN</span>/<span className="sc-status loss">LOSS</span> = hasil akhir.</div>
+            <div className="feed-legend-note">SL/TP relatif per token (volatilitas, likuiditas, momentum). Mode backtest — bukan eksekusi on-chain.</div>
+          </div>
+        )}
+
+        {scanning && signals.length === 0 ? (
+          <div className="signal-grid">
+            {Array.from({ length: 6 }).map((_, i) => <div className="signal-card skeleton" key={i} />)}
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="empty-state">
+            {signals.length === 0
+              ? 'Belum ada sinyal yang lolos filter. Klik Perbarui.'
+              : 'Tidak ada sinyal pada filter ini.'}
+          </div>
+        ) : (
+          <div className="signal-grid">
+            {filtered.map((s) => (
+              <SignalCard key={s.id} signal={s} trade={tradesMap.get(s.ca)} onClick={() => onSelect(s)} />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AgentTab({ agentOn, onToggle, onReset }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div className="panel">
+        <div className="panel-header">
+          <h3>Kontrol Agent</h3>
+          <div className="live-dot" style={{ color: agentOn ? 'var(--green)' : 'var(--muted)' }}>
+            <span style={{ background: agentOn ? 'var(--green)' : 'var(--muted)', animation: agentOn ? 'pulse-dot 1.4s ease-out infinite' : 'none' }} />
+            {agentOn ? 'Auto-track Aktif' : 'Auto-track Jeda'}
+          </div>
+        </div>
+
+        <div className="agent-control">
+          <div className="toggle-row">
+            <button type="button" className={`toggle ${agentOn ? 'on' : ''}`} onClick={onToggle} aria-label="Toggle auto-track" />
+            <div>
+              <strong style={{ fontSize: 15 }}>Auto-Track Sinyal</strong>
+              <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                Saat aktif, sinyal grade A+/A dan sebagian kecil grade B terbaik langsung di-entry virtual dan dilacak otomatis hingga menyentuh TP atau SL.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ marginTop: 16 }}>
+          <button type="button" className="btn-secondary" style={{ fontSize: 13, padding: '10px 16px' }} onClick={onReset}>
+            <Zap size={14} /> Reset Riwayat Backtest
+          </button>
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-header"><h3>Cara Kerja</h3></div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {[
+            { title: 'Pemindaian Pasar', text: 'Agent memantau token memecoin Solana real-time, menilai struktur, momentum, dan risiko — hanya yang lolos filter yang jadi sinyal.' },
+            { title: 'Sinyal Bergrade', text: 'Grade A+/A jadi sinyal entry utama. Hanya sebagian kecil grade B terbaik (High Risk) yang lolos — diseleksi ketat untuk meminimalkan kekalahan. Grade C disaring otomatis.' },
+            { title: 'Backtest Otomatis', text: 'Sinyal A+/A di-entry virtual di harga live, lalu dilacak. Sentuh TP → WIN, sentuh SL → LOSS. Tanpa eksekusi on-chain.' },
+            { title: 'Penjelasan Lengkap', text: 'Klik kartu sinyal untuk narasi penuh: kenapa entry, global fees, integritas volume, holder, rug/runner, dan prinsip Ponyin.' },
+          ].map((item) => (
+            <div key={item.title} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+              <div className="feature-icon" style={{ flex: '0 0 auto' }}><Bot size={18} /></div>
+              <div>
+                <strong style={{ fontSize: 14 }}>{item.title}</strong>
+                <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)', lineHeight: 1.5 }}>{item.text}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
