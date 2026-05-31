@@ -28,8 +28,8 @@ const FEATURES = [
   },
   {
     icon: Gauge,
-    title: 'Backtest Berjalan',
-    text: 'Sinyal terbaik di-entry virtual otomatis lalu dilacak hingga menyentuh TP atau SL. Lihat win rate, ekspektansi, dan kurva ekuitas secara live.'
+    title: 'Backtest Berjalan + DCA Realistis',
+    text: 'Sinyal di-entry virtual secara bertahap (40% awal, 35%, 25%) — bukan all-in. Avg entry diperbarui otomatis, PnL dihitung dari posisi rata-rata seperti trader sungguhan.'
   },
   {
     icon: ShieldCheck,

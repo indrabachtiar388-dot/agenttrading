@@ -77,13 +77,14 @@ export function computeExitActions(trade, currentPrice, liveToken) {
     return { actions: [], newStop: trade?.sl, newStatus: trade?.status, reason: null };
   }
 
-  const { ca, entry, sl, grade, slPct, positionRemaining = 1.0, tiers, peakPrice = entry, slMovedToBreakeven = false } = trade;
+  const { ca, entry, initialEntry, sl, grade, slPct, positionRemaining = 1.0, tiers, peakPrice = entry, slMovedToBreakeven = false } = trade;
+  const tierBase = initialEntry || entry; // tier prices tetap dari harga entry awal
 
   if (!entry || !currentPrice || currentPrice <= 0) {
     return { actions: [], newStop: sl, newStatus: 'ACTIVE', reason: null };
   }
 
-  const currentPnlPct = ((currentPrice - entry) / entry) * 100;
+  const currentPnlPct = ((currentPrice - entry) / entry) * 100; // PnL dari avg entry (termasuk DCA)
   const actions = [];
   let newStop = sl;
   let newStatus = 'ACTIVE';
@@ -106,7 +107,7 @@ export function computeExitActions(trade, currentPrice, liveToken) {
   }
 
   // 3. Partial exits di tier bertingkat
-  const activeTiers = tiers || getTiers(grade, slPct, entry);
+  const activeTiers = tiers || getTiers(grade, slPct, tierBase);
   for (const tier of activeTiers) {
     if (tier.action !== 'PARTIAL_EXIT') continue;
     if (tier.hit) continue; // tier sudah di-hit sebelumnya
@@ -163,7 +164,7 @@ export function applyExitActions(trade, actions, currentPrice) {
     if (action.type === 'PARTIAL_EXIT') {
       const exitSize = action.size;
       const exitPrice = action.price;
-      const exitPnlPct = ((exitPrice - trade.entry) / trade.entry) * 100;
+      const exitPnlPct = ((exitPrice - trade.entry) / trade.entry) * 100; // PnL dari avg entry
       const weightedPnl = exitPnlPct * exitSize;
 
       realizedPnl += weightedPnl;
@@ -180,7 +181,7 @@ export function applyExitActions(trade, actions, currentPrice) {
       });
     } else if (action.type === 'FULL_EXIT') {
       const exitPrice = action.price;
-      const exitPnlPct = ((exitPrice - trade.entry) / trade.entry) * 100;
+      const exitPnlPct = ((exitPrice - trade.entry) / trade.entry) * 100; // PnL dari avg entry
       const weightedPnl = exitPnlPct * positionRemaining;
 
       realizedPnl += weightedPnl;

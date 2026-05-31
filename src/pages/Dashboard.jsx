@@ -368,7 +368,7 @@ function AgentTab({ agentOn, onToggle, onReset }) {
           {[
             { title: 'Pemindaian Pasar', text: 'Agent membaca token memecoin Solana dari data pasar, lalu menilai struktur, momentum, likuiditas, dan risiko dasar.' },
             { title: 'Seleksi Bertingkat', text: 'Grade A+/A menjadi prioritas utama. Grade B hanya ditampilkan jika lolos gerbang tambahan yang lebih ketat untuk menekan risiko loss.' },
-            { title: 'Backtest Otomatis', text: 'Sinyal yang lolos di-entry virtual pada harga live, kemudian dipantau sampai TP atau SL tanpa eksekusi on-chain.' },
+            { title: 'Entry Bertahap (DCA)', text: 'Entry tidak all-in. Awal 40%, lalu DCA 35% saat turun ~5%, dan 25% saat turun ~10% — avg entry diperbarui, PnL dihitung dari posisi rata-rata.' },
             { title: 'Transparansi Analisa', text: 'Klik kartu sinyal untuk membaca alasan lengkap: entry, integritas volume, holder, rug/runner, dan keyakinan data.' },
           ].map((item) => (
             <div key={item.title} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>

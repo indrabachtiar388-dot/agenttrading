@@ -1,4 +1,4 @@
-import { Trophy, RotateCcw, History, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Trophy, RotateCcw, History, ChevronLeft, ChevronRight, X, TrendingUp, TrendingDown } from 'lucide-react';
 import { useState } from 'react';
 import { formatUsd } from '../data/autoTrader';
 
@@ -56,6 +56,7 @@ function EquityCurve({ trades }) {
 export default function PerformancePanel({ stats, trades = [], signalHistory = [], onReset }) {
   const fmt = (n, plus = false) => `${plus && n > 0 ? '+' : ''}${(n || 0).toFixed(1)}%`;
   const [historyPage, setHistoryPage] = useState(0);
+  const [selectedSignal, setSelectedSignal] = useState(null);
   const ITEMS_PER_PAGE = 20;
 
   const totalPages = Math.ceil(signalHistory.length / ITEMS_PER_PAGE);
@@ -110,6 +111,7 @@ export default function PerformancePanel({ stats, trades = [], signalHistory = [
             <StatBox label="Total PnL" value={fmt(stats.totalPnlPct, true)} tone={stats.totalPnlPct >= 0 ? 'up' : 'down'} />
             <StatBox label="Trade Terbaik" value={fmt(stats.bestPct, true)} tone="up" />
             <StatBox label="Trade Terburuk" value={fmt(stats.worstPct)} tone="down" />
+            <StatBox label="Rata-rata DCA" value={(stats.avgDcaCount || 0).toFixed(1)} tone="cyan" sub="per trade" />
           </div>
 
           <EquityCurve trades={trades} />
@@ -167,58 +169,364 @@ export default function PerformancePanel({ stats, trades = [], signalHistory = [
                 <tr style={{ borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>
                   <th style={{ textAlign: 'left', padding: '8px 12px', fontWeight: 600 }}>Token</th>
                   <th style={{ textAlign: 'center', padding: '8px 12px', fontWeight: 600 }}>Grade</th>
-                  <th style={{ textAlign: 'right', padding: '8px 12px', fontWeight: 600 }}>Score</th>
-                  <th style={{ textAlign: 'right', padding: '8px 12px', fontWeight: 600 }}>Confidence</th>
                   <th style={{ textAlign: 'right', padding: '8px 12px', fontWeight: 600 }}>Entry</th>
+                  <th style={{ textAlign: 'right', padding: '8px 12px', fontWeight: 600 }}>TP</th>
+                  <th style={{ textAlign: 'right', padding: '8px 12px', fontWeight: 600 }}>SL</th>
+                  <th style={{ textAlign: 'right', padding: '8px 12px', fontWeight: 600 }}>PnL</th>
                   <th style={{ textAlign: 'right', padding: '8px 12px', fontWeight: 600 }}>Liquidity</th>
                   <th style={{ textAlign: 'right', padding: '8px 12px', fontWeight: 600 }}>Waktu</th>
                 </tr>
               </thead>
               <tbody>
-                {paginatedHistory.map((signal, i) => (
-                  <tr key={`${signal.ca}-${i}`} style={{ borderBottom: '1px solid var(--line)' }}>
-                    <td style={{ padding: '10px 12px' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        <strong style={{ fontSize: 13 }}>${signal.ticker}</strong>
-                        <span style={{ fontSize: 11, color: 'var(--muted)' }}>{signal.name}</span>
-                      </div>
-                    </td>
-                    <td style={{ textAlign: 'center', padding: '10px 12px' }}>
-                      <span style={{
-                        display: 'inline-block',
-                        padding: '2px 8px',
-                        borderRadius: 4,
-                        fontSize: 11,
-                        fontWeight: 700,
-                        color: gradeColor(signal.grade),
-                        background: `${gradeColor(signal.grade)}22`,
-                        border: `1px solid ${gradeColor(signal.grade)}44`
-                      }}>
-                        {signal.grade}
-                      </span>
-                    </td>
-                    <td style={{ textAlign: 'right', padding: '10px 12px', color: 'var(--soft)' }}>
-                      {signal.score || '-'}
-                    </td>
-                    <td style={{ textAlign: 'right', padding: '10px 12px', color: 'var(--soft)' }}>
-                      {signal.confidence || '-'}%
-                    </td>
-                    <td style={{ textAlign: 'right', padding: '10px 12px', color: 'var(--soft)' }}>
-                      {signal.entry ? formatUsd(signal.entry) : '-'}
-                    </td>
-                    <td style={{ textAlign: 'right', padding: '10px 12px', color: 'var(--soft)' }}>
-                      {formatUsd(signal.liquidityUsd)}
-                    </td>
-                    <td style={{ textAlign: 'right', padding: '10px 12px', fontSize: 11, color: 'var(--muted)' }}>
-                      {formatTime(signal.firstSeenAt)}
-                    </td>
-                  </tr>
-                ))}
+                {paginatedHistory.map((signal, i) => {
+                  // Cari trade yang match dengan signal ini
+                  const matchedTrade = trades.find(t => t.ca === signal.ca);
+                  const pnl = matchedTrade?.pnlPct || null;
+                  const status = matchedTrade?.status;
+
+                  return (
+                    <tr
+                      key={`${signal.ca}-${i}`}
+                      style={{
+                        borderBottom: '1px solid var(--line)',
+                        cursor: 'pointer',
+                        transition: 'background 0.15s'
+                      }}
+                      onClick={() => setSelectedSignal(signal)}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-secondary)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      <td style={{ padding: '10px 12px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                          <strong style={{ fontSize: 13 }}>${signal.ticker}</strong>
+                          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{signal.name}</span>
+                        </div>
+                      </td>
+                      <td style={{ textAlign: 'center', padding: '10px 12px' }}>
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '2px 8px',
+                          borderRadius: 4,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          color: gradeColor(signal.grade),
+                          background: `${gradeColor(signal.grade)}22`,
+                          border: `1px solid ${gradeColor(signal.grade)}44`
+                        }}>
+                          {signal.grade}
+                        </span>
+                      </td>
+                      <td style={{ textAlign: 'right', padding: '10px 12px', color: 'var(--soft)' }}>
+                        {signal.entry ? formatUsd(signal.entry) : '-'}
+                      </td>
+                      <td style={{ textAlign: 'right', padding: '10px 12px', color: 'var(--green)', fontSize: 12 }}>
+                        {signal.tpPct ? `+${signal.tpPct.toFixed(1)}%` : '-'}
+                      </td>
+                      <td style={{ textAlign: 'right', padding: '10px 12px', color: 'var(--red)', fontSize: 12 }}>
+                        {signal.slPct ? `-${signal.slPct.toFixed(1)}%` : '-'}
+                      </td>
+                      <td style={{ textAlign: 'right', padding: '10px 12px' }}>
+                        {pnl != null ? (
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }}>
+                            {pnl >= 0 ? <TrendingUp size={14} style={{ color: 'var(--green)' }} /> : <TrendingDown size={14} style={{ color: 'var(--red)' }} />}
+                            <strong style={{ color: pnl >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                              {pnl >= 0 ? '+' : ''}{pnl.toFixed(1)}%
+                            </strong>
+                            {status && (
+                              <span style={{
+                                fontSize: 9,
+                                padding: '1px 4px',
+                                borderRadius: 3,
+                                background: status === 'WIN' ? 'var(--green)' : status === 'LOSS' ? 'var(--red)' : 'var(--cyan)',
+                                color: 'white',
+                                fontWeight: 700,
+                                marginLeft: 4
+                              }}>
+                                {status}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span style={{ color: 'var(--muted)', fontSize: 11 }}>-</span>
+                        )}
+                      </td>
+                      <td style={{ textAlign: 'right', padding: '10px 12px', color: 'var(--soft)' }}>
+                        {formatUsd(signal.liquidityUsd)}
+                      </td>
+                      <td style={{ textAlign: 'right', padding: '10px 12px', fontSize: 11, color: 'var(--muted)' }}>
+                        {formatTime(signal.firstSeenAt)}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </div>
       )}
+
+      {/* Modal Detail Signal */}
+      {selectedSignal && (
+        <SignalHistoryModal
+          signal={selectedSignal}
+          trade={trades.find(t => t.ca === selectedSignal.ca)}
+          onClose={() => setSelectedSignal(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function SignalHistoryModal({ signal, trade, onClose }) {
+  const ex = signal.explain || {};
+  const pnl = trade?.pnlPct || null;
+  const status = trade?.status;
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: 'rgba(0,0,0,0.7)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 9999,
+        padding: 20
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          background: 'var(--bg)',
+          borderRadius: 12,
+          maxWidth: 700,
+          width: '100%',
+          maxHeight: '90vh',
+          overflow: 'auto',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.5)'
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div style={{
+          padding: '20px 24px',
+          borderBottom: '1px solid var(--line)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          position: 'sticky',
+          top: 0,
+          background: 'var(--bg)',
+          zIndex: 1
+        }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 18, display: 'flex', alignItems: 'center', gap: 8 }}>
+              ${signal.ticker}
+              <span style={{
+                padding: '2px 8px',
+                borderRadius: 4,
+                fontSize: 11,
+                fontWeight: 700,
+                color: signal.grade === 'A+' ? 'var(--green)' : signal.grade === 'A' ? 'var(--cyan)' : 'var(--amber)',
+                background: signal.grade === 'A+' ? 'rgba(22,163,74,0.15)' : signal.grade === 'A' ? 'rgba(37,99,235,0.15)' : 'rgba(217,119,6,0.15)',
+                border: `1px solid ${signal.grade === 'A+' ? 'rgba(22,163,74,0.3)' : signal.grade === 'A' ? 'rgba(37,99,235,0.3)' : 'rgba(217,119,6,0.3)'}`
+              }}>
+                {signal.grade}
+              </span>
+            </h3>
+            <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>{signal.name}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              padding: 8,
+              borderRadius: 6,
+              display: 'flex',
+              alignItems: 'center',
+              color: 'var(--muted)'
+            }}
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div style={{ padding: 24 }}>
+          {/* PnL Summary */}
+          {pnl != null && (
+            <div style={{
+              padding: 16,
+              borderRadius: 8,
+              background: pnl >= 0 ? 'rgba(22,163,74,0.1)' : 'rgba(220,38,38,0.1)',
+              border: `1px solid ${pnl >= 0 ? 'rgba(22,163,74,0.3)' : 'rgba(220,38,38,0.3)'}`,
+              marginBottom: 20
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: 13, color: 'var(--muted)' }}>Profit & Loss</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <strong style={{ fontSize: 24, color: pnl >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                    {pnl >= 0 ? '+' : ''}{pnl.toFixed(2)}%
+                  </strong>
+                  {status && (
+                    <span style={{
+                      fontSize: 11,
+                      padding: '4px 8px',
+                      borderRadius: 4,
+                      background: status === 'WIN' ? 'var(--green)' : status === 'LOSS' ? 'var(--red)' : 'var(--cyan)',
+                      color: 'white',
+                      fontWeight: 700
+                    }}>
+                      {status}
+                    </span>
+                  )}
+                </div>
+              </div>
+              {trade && (
+                <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, fontSize: 12 }}>
+                  <div>
+                    <span style={{ color: 'var(--muted)', display: 'block' }}>Posisi Tersisa</span>
+                    <strong style={{ color: 'var(--soft)' }}>{((trade.positionRemaining || 1) * 100).toFixed(0)}%</strong>
+                  </div>
+                  {trade.realizedPnl != null && trade.realizedPnl !== 0 && (
+                    <div>
+                      <span style={{ color: 'var(--muted)', display: 'block' }}>Realized PnL</span>
+                      <strong style={{ color: trade.realizedPnl >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                        {trade.realizedPnl >= 0 ? '+' : ''}{trade.realizedPnl.toFixed(2)}%
+                      </strong>
+                    </div>
+                  )}
+                  {trade.peakPrice && trade.peakPrice > signal.entry && (
+                    <div>
+                      <span style={{ color: 'var(--muted)', display: 'block' }}>Peak</span>
+                      <strong style={{ color: 'var(--cyan)' }}>
+                        +{(((trade.peakPrice - signal.entry) / signal.entry) * 100).toFixed(1)}%
+                      </strong>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Entry Levels */}
+          <div style={{ marginBottom: 20 }}>
+            <h4 style={{ fontSize: 14, margin: '0 0 12px', color: 'var(--soft)' }}>Entry & Levels</h4>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+              <div style={{ padding: 12, background: 'var(--bg-secondary)', borderRadius: 6 }}>
+                <span style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Entry Price</span>
+                <strong style={{ fontSize: 15, color: 'var(--soft)' }}>{signal.entry ? formatUsd(signal.entry) : '-'}</strong>
+              </div>
+              <div style={{ padding: 12, background: 'var(--bg-secondary)', borderRadius: 6 }}>
+                <span style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Liquidity</span>
+                <strong style={{ fontSize: 15, color: 'var(--soft)' }}>{formatUsd(signal.liquidityUsd)}</strong>
+              </div>
+              <div style={{ padding: 12, background: 'rgba(22,163,74,0.1)', borderRadius: 6, border: '1px solid rgba(22,163,74,0.2)' }}>
+                <span style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Take Profit</span>
+                <strong style={{ fontSize: 15, color: 'var(--green)' }}>
+                  {signal.tpPct ? `+${signal.tpPct.toFixed(1)}%` : '-'}
+                </strong>
+                {signal.tp && <span style={{ fontSize: 10, color: 'var(--muted)', display: 'block', marginTop: 2 }}>{formatUsd(signal.tp)}</span>}
+              </div>
+              <div style={{ padding: 12, background: 'rgba(220,38,38,0.1)', borderRadius: 6, border: '1px solid rgba(220,38,38,0.2)' }}>
+                <span style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Stop Loss</span>
+                <strong style={{ fontSize: 15, color: 'var(--red)' }}>
+                  {signal.slPct ? `-${signal.slPct.toFixed(1)}%` : '-'}
+                </strong>
+                {signal.sl && <span style={{ fontSize: 10, color: 'var(--muted)', display: 'block', marginTop: 2 }}>{formatUsd(signal.sl)}</span>}
+              </div>
+            </div>
+          </div>
+
+          {/* Alasan Entry */}
+          {ex.entryRationale?.points && ex.entryRationale.points.length > 0 && (
+            <div style={{ marginBottom: 20 }}>
+              <h4 style={{ fontSize: 14, margin: '0 0 12px', color: 'var(--soft)' }}>Alasan Entry</h4>
+              <div style={{ padding: 16, background: 'var(--bg-secondary)', borderRadius: 8 }}>
+                {ex.entryRationale.headline && (
+                  <p style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 600, color: 'var(--soft)' }}>
+                    {ex.entryRationale.headline}
+                  </p>
+                )}
+                <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, color: 'var(--soft)', lineHeight: 1.6 }}>
+                  {ex.entryRationale.points.map((point, i) => (
+                    <li key={i} style={{ marginBottom: 6 }}>{point}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          )}
+
+          {/* Exit Events */}
+          {trade?.exitEvents && trade.exitEvents.length > 0 && (
+            <div style={{ marginBottom: 20 }}>
+              <h4 style={{ fontSize: 14, margin: '0 0 12px', color: 'var(--soft)' }}>Exit Events</h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {trade.exitEvents.map((evt, i) => (
+                  <div key={i} style={{
+                    padding: 12,
+                    background: 'var(--bg-secondary)',
+                    borderRadius: 6,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    fontSize: 12
+                  }}>
+                    <span style={{ color: 'var(--soft)' }}>
+                      {evt.type === 'PARTIAL_EXIT' && `${evt.tier}: exit ${(evt.size * 100).toFixed(0)}% @ ${formatUsd(evt.price)}`}
+                      {evt.type === 'FULL_EXIT' && `Full exit ${(evt.size * 100).toFixed(0)}% @ ${formatUsd(evt.price)}`}
+                      {evt.type === 'MOVE_STOP' && `SL → ${formatUsd(evt.newStop)}`}
+                      {evt.type === 'TRAIL_STOP' && `Trail ${evt.trailPct}% → ${formatUsd(evt.newStop)}`}
+                    </span>
+                    {evt.pnlPct != null && (
+                      <strong style={{ color: evt.pnlPct >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                        {evt.pnlPct >= 0 ? '+' : ''}{evt.pnlPct.toFixed(1)}%
+                      </strong>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Metrics */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, fontSize: 12 }}>
+            <div style={{ padding: 12, background: 'var(--bg-secondary)', borderRadius: 6, textAlign: 'center' }}>
+              <span style={{ color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Score</span>
+              <strong style={{ fontSize: 16, color: 'var(--soft)' }}>{signal.score || '-'}</strong>
+            </div>
+            <div style={{ padding: 12, background: 'var(--bg-secondary)', borderRadius: 6, textAlign: 'center' }}>
+              <span style={{ color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Confidence</span>
+              <strong style={{ fontSize: 16, color: 'var(--soft)' }}>{signal.confidence || '-'}%</strong>
+            </div>
+            <div style={{ padding: 12, background: 'var(--bg-secondary)', borderRadius: 6, textAlign: 'center' }}>
+              <span style={{ color: 'var(--muted)', display: 'block', marginBottom: 4 }}>R:R</span>
+              <strong style={{ fontSize: 16, color: 'var(--soft)' }}>1:{signal.rr || '-'}</strong>
+            </div>
+          </div>
+
+          {/* Exit Reason */}
+          {trade?.exitReason && (
+            <div style={{
+              marginTop: 16,
+              padding: 12,
+              background: 'var(--bg-secondary)',
+              borderRadius: 6,
+              fontSize: 12,
+              color: 'var(--muted)'
+            }}>
+              <strong style={{ color: 'var(--soft)' }}>Exit reason:</strong> {trade.exitReason}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

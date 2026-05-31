@@ -120,14 +120,28 @@ export default function SignalDetail({ signal, trade, onClose }) {
         <Section icon={Target} title="Entry, SL & TP" accent="var(--cyan)">
           <div className="sd-levelgrid">
             <div className="sd-levelbox"><span>Harga Live</span><strong>{formatUsd(signal.priceUsd)}</strong></div>
-            <div className="sd-levelbox"><span>Entry</span><strong>{entry ? formatUsd(entry) : '-'}</strong></div>
+            <div className="sd-levelbox">
+              <span>{trade?.entries && trade.entries.length > 1 ? 'Avg Entry' : 'Entry'}</span>
+              <strong>{entry ? formatUsd(entry) : '-'}</strong>
+            </div>
             <div className="sd-levelbox"><span>Stop Loss</span><strong className="text-red">{sl ? formatUsd(sl) : '-'}<small> -{slPct}%</small></strong></div>
             <div className="sd-levelbox"><span>Take Profit</span><strong className="text-green">{tp ? formatUsd(tp) : '-'}<small> +{tpPct}%</small></strong></div>
             <div className="sd-levelbox"><span>PnL Berjalan</span><strong className={livePnl == null ? 'text-muted' : livePnl >= 0 ? 'text-green' : 'text-red'}>{livePnl == null ? '—' : `${livePnl >= 0 ? '+' : ''}${livePnl.toFixed(2)}%`}</strong></div>
             <div className="sd-levelbox"><span>Status</span><strong style={{ color: trade?.status === 'WIN' ? 'var(--green)' : trade?.status === 'LOSS' ? 'var(--red)' : trade?.status === 'ACTIVE' ? 'var(--cyan)' : 'var(--muted)' }}>{trade?.status || (signal.tracked ? 'SIAP' : 'PENDING')}</strong></div>
           </div>
+
+          {trade?.entries && trade.entries.length > 1 && (
+            <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {trade.entries.map((e, i) => (
+                <span key={i} className="sd-dca-chip" title={`Entry ${i + 1} @ ${formatUsd(e.price)} (${e.pct}%)`}>
+                  Entry {i + 1}: {formatUsd(e.price)} · {e.pct}%
+                </span>
+              ))}
+            </div>
+          )}
+
           {trade && (
-            <div style={{ marginTop: 12, display: 'flex', gap: 8, fontSize: 12, color: 'var(--muted)' }}>
+            <div style={{ marginTop: 12, display: 'flex', gap: 8, fontSize: 12, color: 'var(--muted)', flexWrap: 'wrap' }}>
               <span>Posisi tersisa: <strong>{((trade.positionRemaining ?? 1.0) * 100).toFixed(0)}%</strong></span>
               {trade.realizedPnl != null && trade.realizedPnl !== 0 && (
                 <span>· Realized PnL: <strong className={trade.realizedPnl >= 0 ? 'text-green' : 'text-red'}>{trade.realizedPnl >= 0 ? '+' : ''}{trade.realizedPnl.toFixed(2)}%</strong></span>
