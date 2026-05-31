@@ -4,6 +4,7 @@ import { analyzeRunner } from './runnerDetector';
 import { pushSnapshot, getPeak } from './snapshotStore';
 import { buildSignalExplain } from './signalNarrative';
 import { fetchDiscoveryFeed, fetchTokenMarketSnapshots, fetchTokenSnapshot } from './liveProviders';
+import { enrichFeedTokens } from './feedEnrichment';
 import { computeExitActions, applyExitActions } from './exitEngine';
 import { buildMetaContext, analyzeNarrative } from './narrativeDetector';
 import { buildRegimeBaseline, setCachedBaseline, getCachedBaseline } from './marketRegime';
@@ -18,7 +19,7 @@ const FEED_GRADES = new Set(['A+', 'A', 'B']);
 /* Grade yang otomatis di-entry & dilacak. */
 const TRACKED_GRADES = new Set(['A+', 'A', 'B']);
 /* Grade B = High Risk: hanya "best of the best" yang diloloskan, dibatasi jumlahnya. */
-const MAX_B_SIGNALS = 1;
+const MAX_B_SIGNALS = 2;
 /* Jeda sebelum token yang sama boleh di-entry ulang setelah ditutup. */
 const REENTRY_COOLDOWN_MS = 5 * 60 * 1000;
 
@@ -371,13 +372,17 @@ function isQualityB(s) {
   const riskLevel = ex.riskNarrative?.level || 'low';
   const runner = Number(ex.runnerSummary?.score || 0);
   const vol = Number(ex.volumeIntegrity || 0);
+  // Knife-edge dilunakkan: ambang lama dikalibrasi untuk dunia "capped" (sebelum
+  // enrichment). Setelah enrichment, distribusi skor/keyakinan naik, jadi ambang
+  // ketat lama justru over-filter. Safety inti (riskLevel low, likuiditas, score,
+  // confidence) tetap dipertahankan.
   return Number(s.confidence) >= 65
     && Number(s.score) >= 58
     && riskLevel === 'low'
-    && runner >= 50
-    && vol >= 62
-    && Number(s.m5) >= 1
-    && Number(s.h1) >= -1
+    && runner >= 42
+    && vol >= 55
+    && Number(s.m5) >= -1
+    && Number(s.h1) >= -4
     && Number(s.liquidityUsd) >= 25000;
 }
 
@@ -394,14 +399,27 @@ export async function refreshSignals({ autoTrack = true, styleId = null } = {}) 
   try {
     const feed = await fetchDiscoveryFeed();
     const tokens = feed.tokens || [];
+    const scanTokens = tokens.slice(0, 30);
+
+    // ENRICHMENT on-chain (mint/freeze + top holders) untuk kandidat paling
+    // tradable SEBELUM grading. Tanpa ini, flags null bikin confidence mentok
+    // ~50 dan penalti scoreUnknowns -21 → token bersih tidak pernah naik A/A+.
+    // Mutasi in-place: objek yang sama dipakai computeSignal di bawah.
+    try {
+      const enrichCandidates = [...scanTokens].sort(
+        (a, b) => Number(b.liquidityUsd || 0) - Number(a.liquidityUsd || 0)
+      );
+      await enrichFeedTokens(enrichCandidates, { limit: 15 });
+    } catch {
+      // Enrichment opsional — kegagalan = fallback ke perilaku lama (degraded).
+    }
 
     // Build meta context dan regime baseline sekali per scan dari seluruh populasi feed
     const metaContext = buildMetaContext(tokens);
     const regimeBaseline = buildRegimeBaseline(tokens);
     setCachedBaseline(regimeBaseline); // cache untuk reevaluateSignal
 
-    const computed = tokens
-      .slice(0, 30)
+    const computed = scanTokens
       .map(token => computeSignal(token, metaContext, regimeBaseline))
       .filter((s) => FEED_GRADES.has(s.grade));
 

@@ -417,7 +417,7 @@ async function fetchDexOrders(address) {
   return normalizeList(data).filter((order) => order?.status === 'approved' || order?.paymentTimestamp);
 }
 
-async function fetchMintAuthority(address) {
+export async function fetchMintAuthority(address) {
   const data = await rpc('getAccountInfo', [
     address,
     {
@@ -449,7 +449,7 @@ async function fetchMintAuthority(address) {
 const WALLET_LABELS = parseWalletLabels(import.meta.env.VITE_SMART_WALLETS || '');
 let smartWalletLabelsPromise = null;
 
-async function fetchTopHolders(address, supplyFromMint = null, dexPairs = []) {
+export async function fetchTopHolders(address, supplyFromMint = null, dexPairs = []) {
   try {
     const [largestAccounts, tokenSupply] = await Promise.all([
       rpc('getTokenLargestAccounts', [
@@ -731,7 +731,7 @@ async function fetchSmartWalletRegistry() {
   };
 }
 
-async function rpc(method, params) {
+export async function rpc(method, params) {
   const response = await fetchWithTimeout(SOLANA_RPC, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -1365,7 +1365,7 @@ function buildDexGlobalFeeEstimate({ volume5m = 0, volumeH1 = 0, volumeH24 = 0 }
   };
 }
 
-function inferPhase(ageMinutes, fdv, dexId = '') {
+export function inferPhase(ageMinutes, fdv, dexId = '') {
   const dex = dexId.toLowerCase();
   if (ageMinutes != null && ageMinutes <= 30) return 'new';
   if (dex.includes('raydium') || dex.includes('orca') || dex.includes('meteora')) return 'migrated';
