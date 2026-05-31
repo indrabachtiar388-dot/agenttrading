@@ -5,7 +5,9 @@ import { AuthProvider } from './hooks/useSecureAuth.jsx';
 import './styles/main.css';
 import './styles/wallet.css';
 import './styles/live-trading.css';
-import './styles/social.css';
+import './styles/analytics.css';
+import './styles/trading-style.css';
+import './styles/command-center.css';
 
 // Import monitoring utilities
 import { initGA, trackPerformance, trackWebVitals } from './utils/analytics.js';

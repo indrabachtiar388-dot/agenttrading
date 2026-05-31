@@ -7,6 +7,7 @@ import { fetchDiscoveryFeed, fetchTokenMarketSnapshots, fetchTokenSnapshot } fro
 import { computeExitActions, applyExitActions } from './exitEngine';
 import { buildMetaContext, analyzeNarrative } from './narrativeDetector';
 import { buildRegimeBaseline, setCachedBaseline, getCachedBaseline } from './marketRegime';
+import { getStyle, loadStyleId, selectSignalsForStyle } from './tradingStyle';
 
 const TRADES_KEY = 'ma_backtest_v2'; // v2 untuk reset data lama
 const SIGNALS_KEY = 'ma_signals_v2'; // v2 untuk reset data lama
@@ -372,7 +373,7 @@ function sortSignals(a, b) {
  * Pindai feed → hitung sinyal → A+/A diutamakan, grade B hanya "best of best"
  * (dibatasi MAX_B_SIGNALS) → auto-track yang lolos.
  */
-export async function refreshSignals({ autoTrack = true } = {}) {
+export async function refreshSignals({ autoTrack = true, styleId = null } = {}) {
   try {
     const feed = await fetchDiscoveryFeed();
     const tokens = feed.tokens || [];
@@ -399,8 +400,18 @@ export async function refreshSignals({ autoTrack = true } = {}) {
     signals.forEach(s => addToSignalHistory(s));
 
     saveSignals(signals);
+
     if (autoTrack) {
-      signals.filter((s) => s.tracked).forEach(openBacktestTrade);
+      // Style-based rotation: isi slot kosong dengan momentum TERBARU sesuai gaya user.
+      // Saat satu posisi close, slot terbuka langsung diisi sinyal terfresh — feed
+      // jadi bervariasi, tidak nyangkut di token lama.
+      const style = getStyle(styleId || loadStyleId());
+      const trades = loadTrades();
+      const activeTrades = trades.filter((t) => t.status === 'ACTIVE');
+      const recentlyClosed = trades.filter((t) => t.status === 'WIN' || t.status === 'LOSS');
+
+      const picks = selectSignalsForStyle(signals, activeTrades, style, recentlyClosed);
+      picks.forEach((sig) => openBacktestTrade(sig, style));
     }
     return signals;
   } catch (e) {
@@ -493,19 +504,27 @@ export function getBacktestTrades() {
 }
 
 /**
- * Buka trade backtest virtual (tanpa saldo). Hanya untuk grade A+/A,
- * satu trade aktif per token. Mengembalikan trade baru atau null.
+ * Buka trade backtest virtual (tanpa saldo). Menghormati maksimum posisi &
+ * cooldown rotasi dari style yang dipilih. Satu trade aktif per token.
+ * Mengembalikan trade baru atau null.
  */
-export function openBacktestTrade(signal) {
+export function openBacktestTrade(signal, style = null) {
   if (!signal || !TRACKED_GRADES.has(signal.grade)) return null;
   if (!signal.entry || !signal.sl || !signal.tp) return null;
 
   const trades = loadTrades();
   if (trades.some((t) => t.ca === signal.ca && t.status === 'ACTIVE')) return null;
 
-  // Cooldown: jangan entry ulang token yang baru saja ditutup.
+  // Batasi jumlah posisi aktif sesuai style (slot penuh = tolak).
+  if (style && Number.isFinite(style.maxPositions)) {
+    const activeCount = trades.filter((t) => t.status === 'ACTIVE').length;
+    if (activeCount >= style.maxPositions) return null;
+  }
+
+  // Cooldown re-entry: pakai cooldown style kalau ada, fallback ke default.
+  const cooldown = style?.rotationCooldownMs ?? REENTRY_COOLDOWN_MS;
   const lastClosed = trades.find((t) => t.ca === signal.ca && t.closedAt);
-  if (lastClosed && Date.now() - lastClosed.closedAt < REENTRY_COOLDOWN_MS) return null;
+  if (lastClosed && Date.now() - lastClosed.closedAt < cooldown) return null;
 
   const now = Date.now();
   const trade = {
@@ -515,6 +534,7 @@ export function openBacktestTrade(signal) {
     name: signal.name,
     grade: signal.grade,
     side: signal.side,
+    styleId: signal.styleId || style?.id || null,
     initialEntry: signal.entry,
     entry: signal.entry,
     sl: signal.sl,

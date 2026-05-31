@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  LogOut, RefreshCw, Activity, Trophy, Settings, Bot, Zap, Download, Store
+  LogOut, RefreshCw, Activity, Trophy, Settings, Bot, Zap, Download,
+  TrendingUp, Wallet, ArrowRight, Layers, Flame, Shield, Scale, Power
 } from 'lucide-react';
 import { useAuth } from '../hooks/useSecureAuth.jsx';
 import { useLiveTrading } from '../hooks/useLiveTrading.jsx';
@@ -17,18 +18,14 @@ import {
 import SignalCard from '../components/SignalCard.jsx';
 import SignalDetail from '../components/SignalDetail.jsx';
 import PerformancePanel from '../components/PerformancePanel.jsx';
-import LiveTradingPanel from '../components/LiveTradingPanel.jsx';
 import TradeConfirmationModal from '../components/TradeConfirmationModal.jsx';
-import Leaderboard from '../components/Leaderboard.jsx';
-import StrategyMarketplace from '../components/StrategyMarketplace.jsx';
+import TradingStyleSelector from '../components/TradingStyleSelector.jsx';
+import { getStyle, loadStyleId, saveStyleId, TRADING_STYLES } from '../data/tradingStyle';
 
 const TABS = [
-  { key: 'signals', label: 'Sinyal Pasar', icon: Activity },
+  { key: 'home', label: 'Beranda', icon: Bot },
+  { key: 'signals', label: 'Sinyal & Posisi', icon: Activity },
   { key: 'performance', label: 'Performa', icon: Trophy },
-  { key: 'live', label: 'Live Trading', icon: Zap },
-  { key: 'leaderboard', label: 'Peringkat', icon: Trophy },
-  { key: 'strategies', label: 'Strategi', icon: Store },
-  { key: 'agent', label: 'Agent', icon: Settings },
 ];
 
 const HISTORY_RESET_KEY = 'ma_history_reset_v2';
@@ -36,15 +33,19 @@ const HISTORY_RESET_KEY = 'ma_history_reset_v2';
 export default function Dashboard({ onLogout }) {
   const { user } = useAuth();
   const liveTrading = useLiveTrading();
-  const [tab, setTab] = useState('signals');
+  const [tab, setTab] = useState('home');
   const [signals, setSignals] = useState(() => getCachedSignals());
   const [trades, setTrades] = useState(() => getBacktestTrades());
   const [signalHistory, setSignalHistory] = useState(() => getSignalHistory());
   const [scanning, setScanning] = useState(false);
   const [agentOn, setAgentOn] = useState(() => localStorage.getItem('ma_agent_on') !== 'false');
+  const [styleId, setStyleId] = useState(() => loadStyleId());
   const [selectedCa, setSelectedCa] = useState(null);
   const [toast, setToast] = useState('');
   const [lastPriceUpdate, setLastPriceUpdate] = useState(null);
+
+  const styleIdRef = useRef(styleId);
+  styleIdRef.current = styleId;
 
   useEffect(() => {
     if (localStorage.getItem(HISTORY_RESET_KEY) !== 'true') {
@@ -91,7 +92,7 @@ export default function Dashboard({ onLogout }) {
 
   const handleRefreshSignals = async () => {
     setScanning(true);
-    const s = await refreshSignals({ autoTrack: agentOnRef.current });
+    const s = await refreshSignals({ autoTrack: agentOnRef.current, styleId: styleIdRef.current });
     setSignals(s);
     setTrades(getBacktestTrades());
     setSignalHistory(getSignalHistory());
@@ -106,6 +107,15 @@ export default function Dashboard({ onLogout }) {
     }
 
     setScanning(false);
+  };
+
+  const handleStyleChange = (newStyleId) => {
+    setStyleId(newStyleId);
+    saveStyleId(newStyleId);
+    const style = getStyle(newStyleId);
+    showToast(`Gaya trading: ${style.label} — maks ${style.maxPositions} posisi, grade ${style.allowedGrades.join('/')}`);
+    // Trigger scan ulang agar slot langsung menyesuaikan style baru
+    setTimeout(() => handleRefreshSignals(), 300);
   };
 
   // Initial load
@@ -182,6 +192,25 @@ export default function Dashboard({ onLogout }) {
         ))}
       </div>
 
+      {tab === 'home' && (
+        <HomeTab
+          user={user}
+          stats={stats}
+          signals={displaySignals}
+          tradesMap={tradesMap}
+          counts={counts}
+          agentOn={agentOn}
+          onToggleAgent={toggleAgent}
+          styleId={styleId}
+          onStyleChange={handleStyleChange}
+          scanning={scanning}
+          lastPriceUpdate={lastPriceUpdate}
+          onRefresh={handleRefreshSignals}
+          onSelectSignal={(s) => setSelectedCa(s.ca)}
+          onGoToSignals={() => setTab('signals')}
+          onReset={handleReset}
+        />
+      )}
       {tab === 'signals' && (
         <SignalsTab
           signals={displaySignals}
@@ -190,6 +219,7 @@ export default function Dashboard({ onLogout }) {
           stats={stats}
           scanning={scanning}
           agentOn={agentOn}
+          styleId={styleId}
           lastPriceUpdate={lastPriceUpdate}
           onRefresh={handleRefreshSignals}
           onSelect={(s) => setSelectedCa(s.ca)}
@@ -197,18 +227,6 @@ export default function Dashboard({ onLogout }) {
       )}
       {tab === 'performance' && (
         <PerformancePanel stats={stats} trades={trades} signalHistory={signalHistory} onReset={handleReset} />
-      )}
-      {tab === 'live' && (
-        <LiveTradingPanel />
-      )}
-      {tab === 'leaderboard' && (
-        <Leaderboard currentUserId={user?.publicKey} />
-      )}
-      {tab === 'strategies' && (
-        <StrategyMarketplace currentUser={user?.publicKey ? `${user.publicKey.slice(0, 4)}…${user.publicKey.slice(-4)}` : 'anon'} />
-      )}
-      {tab === 'agent' && (
-        <AgentTab agentOn={agentOn} onToggle={toggleAgent} onReset={handleReset} />
       )}
 
       {selectedSignal && (
@@ -312,9 +330,10 @@ const FEED_FILTERS = [
   { key: 'active', label: 'Dilacak' },
 ];
 
-function SignalsTab({ signals, tradesMap, counts, stats, scanning, agentOn, lastPriceUpdate, onRefresh, onSelect }) {
+function SignalsTab({ signals, tradesMap, counts, stats, scanning, agentOn, styleId, lastPriceUpdate, onRefresh, onSelect }) {
   const [filter, setFilter] = useState('all');
   const [showGuide, setShowGuide] = useState(false);
+  const style = getStyle(styleId);
 
   const filterCount = {
     all: counts.total,
@@ -343,7 +362,7 @@ function SignalsTab({ signals, tradesMap, counts, stats, scanning, agentOn, last
       <div className="panel">
         <div className="panel-header">
           <div>
-            <h3>Sinyal Pasar</h3>
+            <h3>Sinyal Pasar <span className="style-tag" style={{ color: style.accent, background: `${style.accent}14` }}>Gaya {style.label}</span></h3>
             <p className="panel-subtitle">Feed backtest untuk membaca peluang, kualitas momentum, dan risiko sebelum sistem digunakan secara real-time.</p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -415,56 +434,211 @@ function SignalsTab({ signals, tradesMap, counts, stats, scanning, agentOn, last
   );
 }
 
-function AgentTab({ agentOn, onToggle, onReset }) {
+const STYLE_ICONS = { conservative: Shield, balanced: Scale, hyper: Flame };
+
+/**
+ * HomeTab — Command Center. Satu layar yang menyambungkan semuanya:
+ * status agent, gaya trading + slot posisi, posisi berjalan, sinyal terpanas,
+ * dan ringkasan performa. Semua klikable & saling terhubung.
+ */
+function HomeTab({
+  user, stats, signals, tradesMap, counts, agentOn, onToggleAgent,
+  styleId, onStyleChange, scanning, lastPriceUpdate, onRefresh,
+  onSelectSignal, onGoToSignals, onReset,
+}) {
+  const style = getStyle(styleId);
+  const activePositions = Array.from(tradesMap.values());
+  const slotsUsed = activePositions.length;
+  const slotsTotal = style.maxPositions;
+
+  // Sinyal terpanas yang belum jadi posisi (peluang masuk berikutnya)
+  const hotSignals = signals
+    .filter((s) => !tradesMap.has(s.ca) && (s.grade === 'A+' || s.grade === 'A'))
+    .slice(0, 4);
+
+  const greeting = user?.publicKey
+    ? `${user.publicKey.slice(0, 4)}…${user.publicKey.slice(-4)}`
+    : 'Trader';
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div className="home-grid">
+      {/* HERO: status agent + aksi cepat */}
+      <div className={`cmd-hero ${agentOn ? 'on' : 'off'}`}>
+        <div className="cmd-hero-main">
+          <div className="cmd-hero-status">
+            <span className="cmd-pulse" />
+            {agentOn ? 'Agent sedang memindai pasar' : 'Agent dijeda'}
+          </div>
+          <h2>Halo, {greeting}</h2>
+          <p>
+            {agentOn
+              ? `Gaya ${style.label} aktif — agent mengisi hingga ${slotsTotal} posisi dan merotasi ke momentum terbaru otomatis.`
+              : 'Aktifkan agent untuk mulai melacak sinyal terbaik secara otomatis sesuai gaya trading kamu.'}
+          </p>
+          <div className="cmd-hero-actions">
+            <button type="button" className={`btn-power ${agentOn ? 'on' : ''}`} onClick={onToggleAgent}>
+              <Power size={16} /> {agentOn ? 'Jeda Agent' : 'Aktifkan Agent'}
+            </button>
+            <button type="button" className="btn-ghost" onClick={onRefresh} disabled={scanning}>
+              <RefreshCw size={15} style={{ animation: scanning ? 'spin 1s linear infinite' : 'none' }} />
+              {scanning ? 'Memindai…' : 'Scan Sekarang'}
+            </button>
+          </div>
+        </div>
+
+        <div className="cmd-hero-balance">
+          <span className="label"><Wallet size={13} /> Saldo</span>
+          <strong>{(user?.balanceSol ?? 0).toFixed(4)} <em>SOL</em></strong>
+          <div className="cmd-slot-meter" title={`${slotsUsed}/${slotsTotal} slot posisi terpakai`}>
+            {Array.from({ length: slotsTotal }).map((_, i) => (
+              <span key={i} className={`slot-pip ${i < slotsUsed ? 'filled' : ''}`} style={{ '--accent': style.accent }} />
+            ))}
+          </div>
+          <span className="cmd-slot-label">{slotsUsed}/{slotsTotal} posisi aktif</span>
+        </div>
+      </div>
+
+      {/* QUICK STATS — terhubung ke Performa */}
+      <div className="cmd-stats">
+        <QuickStat icon={Layers} label="Posisi Aktif" value={slotsUsed} accent="var(--cyan)" />
+        <QuickStat icon={Activity} label="Sinyal Live" value={counts.total} accent="var(--blue)" />
+        <QuickStat
+          icon={Trophy}
+          label="Win Rate"
+          value={stats.total ? `${stats.winRate.toFixed(0)}%` : '—'}
+          accent={stats.winRate >= 50 ? 'var(--green)' : 'var(--amber)'}
+        />
+        <QuickStat
+          icon={TrendingUp}
+          label="Total PnL"
+          value={stats.total ? `${stats.totalPnlPct >= 0 ? '+' : ''}${stats.totalPnlPct.toFixed(1)}%` : '—'}
+          accent={stats.totalPnlPct >= 0 ? 'var(--green)' : 'var(--red)'}
+        />
+      </div>
+
+      {/* GAYA TRADING — kompak, langsung di beranda */}
+      <div className="panel cmd-style">
+        <div className="panel-header">
+          <div>
+            <h3>Gaya Trading</h3>
+            <p className="panel-subtitle">Atur ritme agent. Menentukan jumlah posisi & seberapa cepat slot kosong diisi momentum baru.</p>
+          </div>
+        </div>
+        <div className="cmd-style-row">
+          {Object.values(TRADING_STYLES).map((st) => {
+            const Icon = STYLE_ICONS[st.id] || Scale;
+            const active = styleId === st.id;
+            return (
+              <button
+                key={st.id}
+                type="button"
+                className={`cmd-style-chip ${active ? 'active' : ''}`}
+                onClick={() => onStyleChange(st.id)}
+                style={{ '--accent': st.accent }}
+              >
+                <Icon size={18} />
+                <span className="cs-label">{st.label}</span>
+                <span className="cs-meta">Maks {st.maxPositions} · {st.allowedGrades.join('/')}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* POSISI BERJALAN */}
       <div className="panel">
         <div className="panel-header">
-          <h3>Kontrol Agent</h3>
-          <div className="live-dot" style={{ color: agentOn ? 'var(--green)' : 'var(--muted)' }}>
-            <span style={{ background: agentOn ? 'var(--green)' : 'var(--muted)', animation: agentOn ? 'pulse-dot 1.4s ease-out infinite' : 'none' }} />
-            {agentOn ? 'Auto-track Aktif' : 'Auto-track Dijeda'}
+          <div>
+            <h3>Posisi Berjalan</h3>
+            <p className="panel-subtitle">Entry virtual yang sedang dipantau menuju TP / SL.</p>
           </div>
+          {lastPriceUpdate && (
+            <span className="cmd-update-chip">
+              Harga {Math.max(0, Math.round((Date.now() - lastPriceUpdate) / 1000))}d lalu
+            </span>
+          )}
         </div>
-
-        <div className="agent-control">
-          <div className="toggle-row">
-            <button type="button" className={`toggle ${agentOn ? 'on' : ''}`} onClick={onToggle} aria-label="Toggle auto-track" />
-            <div>
-              <strong style={{ fontSize: 15 }}>Auto-Track Sinyal Pilihan</strong>
-              <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                Saat aktif, grade A+/A dan grade B yang lolos seleksi tambahan akan di-entry virtual dan dipantau otomatis sampai TP atau SL.
-              </div>
-            </div>
+        {activePositions.length === 0 ? (
+          <div className="cmd-empty">
+            <p>{agentOn ? 'Belum ada posisi. Agent akan membuka entry begitu menemukan sinyal yang lolos gaya kamu.' : 'Agent dijeda. Aktifkan untuk mulai membuka posisi otomatis.'}</p>
           </div>
-        </div>
+        ) : (
+          <div className="cmd-position-list">
+            {activePositions.map((t) => <PositionRow key={t.ca} trade={t} onClick={() => onSelectSignal(t)} />)}
+          </div>
+        )}
+      </div>
 
-        <div style={{ marginTop: 16 }}>
-          <button type="button" className="btn-secondary" style={{ fontSize: 13, padding: '10px 16px' }} onClick={onReset}>
-            <Zap size={14} /> Kosongkan Data Backtest
+      {/* SINYAL TERPANAS → CTA ke tab Sinyal */}
+      <div className="panel">
+        <div className="panel-header">
+          <div>
+            <h3>Peluang Terpanas</h3>
+            <p className="panel-subtitle">Sinyal grade A+/A terkuat yang belum jadi posisi.</p>
+          </div>
+          <button type="button" className="cmd-link" onClick={onGoToSignals}>
+            Lihat semua <ArrowRight size={14} />
           </button>
         </div>
+        {hotSignals.length === 0 ? (
+          <div className="cmd-empty"><p>Belum ada peluang baru. Tekan "Scan Sekarang" untuk memindai ulang.</p></div>
+        ) : (
+          <div className="cmd-hot-list">
+            {hotSignals.map((s) => <HotSignalRow key={s.ca} signal={s} onClick={() => onSelectSignal(s)} />)}
+          </div>
+        )}
       </div>
 
-      <div className="panel">
-        <div className="panel-header"><h3>Cara Kerja</h3></div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {[
-            { title: 'Pemindaian Pasar', text: 'Agent membaca token memecoin Solana dari data pasar, lalu menilai struktur, momentum, likuiditas, dan risiko dasar.' },
-            { title: 'Seleksi Bertingkat', text: 'Grade A+/A menjadi prioritas utama. Grade B hanya ditampilkan jika lolos gerbang tambahan yang lebih ketat untuk menekan risiko loss.' },
-            { title: 'Entry & Exit Adaptif', text: 'All-in entry pada harga sinyal terbentuk. Exit pakai tier multiple (1.2x → 1.5x → 2.5x → 4x) + moonbag. Trailing stop makin longgar saat multiple naik — bisa hold sampai 50x kalau narasi panas.' },
-            { title: 'Transparansi Analisa', text: 'Klik kartu sinyal untuk membaca alasan lengkap: entry, integritas volume, holder, rug/runner, dan keyakinan data.' },
-          ].map((item) => (
-            <div key={item.title} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-              <div className="feature-icon" style={{ flex: '0 0 auto' }}><Bot size={18} /></div>
-              <div>
-                <strong style={{ fontSize: 14 }}>{item.title}</strong>
-                <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)', lineHeight: 1.5 }}>{item.text}</p>
-              </div>
-            </div>
-          ))}
-        </div>
+      <div className="cmd-footer">
+        <button type="button" className="btn-ghost-sm" onClick={onReset}>
+          Kosongkan data simulasi
+        </button>
+        <span className="cmd-mode-note">Mode sinyal & simulasi — belum eksekusi on-chain.</span>
       </div>
     </div>
+  );
+}
+
+function QuickStat({ icon: Icon, label, value, accent }) {
+  return (
+    <div className="cmd-stat" style={{ '--accent': accent }}>
+      <div className="cmd-stat-icon"><Icon size={16} /></div>
+      <div>
+        <span>{label}</span>
+        <strong>{value}</strong>
+      </div>
+    </div>
+  );
+}
+
+function PositionRow({ trade, onClick }) {
+  const pnl = Number(trade.pnlPct || 0);
+  const up = pnl >= 0;
+  return (
+    <button type="button" className="cmd-position" onClick={onClick}>
+      <div className="cp-token">
+        <span className={`cp-grade grade-${trade.grade?.toLowerCase().replace('+', 'plus')}`}>{trade.grade}</span>
+        <div>
+          <strong>{trade.ticker}</strong>
+          <small>{trade.name}</small>
+        </div>
+      </div>
+      <div className={`cp-pnl ${up ? 'up' : 'down'}`}>
+        {up ? '+' : ''}{pnl.toFixed(1)}%
+      </div>
+    </button>
+  );
+}
+
+function HotSignalRow({ signal, onClick }) {
+  return (
+    <button type="button" className="cmd-hot" onClick={onClick}>
+      <span className={`cp-grade grade-${signal.grade?.toLowerCase().replace('+', 'plus')}`}>{signal.grade}</span>
+      <div className="ch-info">
+        <strong>{signal.ticker}</strong>
+        <small>{signal.confidence}% konfidensi · {Number(signal.m5 || 0) >= 0 ? '+' : ''}{Number(signal.m5 || 0).toFixed(1)}% 5m</small>
+      </div>
+      <ArrowRight size={15} className="ch-arrow" />
+    </button>
   );
 }

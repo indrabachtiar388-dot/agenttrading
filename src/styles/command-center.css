@@ -1,0 +1,259 @@
+/* ═══════════════════════════════════════════════════════════════════
+   COMMAND CENTER (Beranda) — layar pusat yang menyambungkan semuanya
+   ═══════════════════════════════════════════════════════════════════ */
+
+.home-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* ─── HERO ─────────────────────────────────────────────────────────── */
+.cmd-hero {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 28px 30px;
+  border-radius: 20px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background:
+    radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--cyan) 10%, transparent), transparent 55%),
+    linear-gradient(135deg, var(--panel), var(--panel-2));
+  transition: box-shadow 0.3s ease;
+}
+
+.cmd-hero.on {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--green) 30%, transparent),
+              0 14px 44px color-mix(in srgb, var(--green) 12%, transparent);
+}
+
+.cmd-hero-main { max-width: 60%; }
+
+.cmd-hero-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.cmd-hero.on .cmd-hero-status { color: var(--green); }
+
+.cmd-pulse {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--muted);
+}
+.cmd-hero.on .cmd-pulse {
+  background: var(--green);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--green) 60%, transparent);
+  animation: cmdPulse 1.8s ease-out infinite;
+}
+@keyframes cmdPulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--green) 55%, transparent); }
+  70% { box-shadow: 0 0 0 10px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+.cmd-hero-main h2 {
+  margin: 12px 0 6px;
+  font-size: 1.7rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.cmd-hero-main p {
+  margin: 0 0 18px;
+  font-size: 0.92rem;
+  line-height: 1.55;
+  color: var(--soft);
+}
+
+.cmd-hero-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
+.btn-power {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 12px 22px; border-radius: 11px;
+  font-weight: 800; font-size: 0.92rem;
+  background: var(--panel-3); color: var(--text);
+  border: 1px solid var(--border);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+.btn-power.on {
+  background: linear-gradient(135deg, var(--green), #15803d);
+  color: #fff; border-color: transparent;
+  box-shadow: 0 10px 30px color-mix(in srgb, var(--green) 26%, transparent);
+}
+.btn-power:hover { transform: translateY(-1px); }
+
+.btn-ghost {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 12px 20px; border-radius: 11px;
+  font-weight: 700; font-size: 0.9rem;
+  background: transparent; color: var(--soft);
+  border: 1px solid var(--border);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.btn-ghost:hover:not(:disabled) { background: var(--panel-2); color: var(--text); }
+
+.cmd-hero-balance {
+  display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
+  padding: 18px 20px; border-radius: 16px; min-width: 200px;
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(6px);
+}
+.cmd-hero-balance .label {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 0.75rem; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.cmd-hero-balance strong { font-size: 1.7rem; font-weight: 800; }
+.cmd-hero-balance strong em { font-size: 0.85rem; font-weight: 700; color: var(--muted); font-style: normal; }
+
+.cmd-slot-meter { display: flex; gap: 5px; margin-top: 6px; }
+.slot-pip {
+  width: 26px; height: 6px; border-radius: 4px;
+  background: var(--panel-3);
+  transition: background 0.25s ease;
+}
+.slot-pip.filled { background: var(--accent, var(--cyan)); }
+.cmd-slot-label { font-size: 0.72rem; color: var(--muted); font-weight: 600; }
+
+/* ─── QUICK STATS ──────────────────────────────────────────────────── */
+.cmd-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+.cmd-stat {
+  display: flex; align-items: center; gap: 12px;
+  padding: 16px 18px; border-radius: 14px;
+  background: var(--panel); border: 1px solid var(--border);
+  transition: transform 0.18s ease, border-color 0.18s ease;
+}
+.cmd-stat:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+.cmd-stat-icon {
+  width: 38px; height: 38px; border-radius: 10px;
+  display: grid; place-items: center;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.cmd-stat span { display: block; font-size: 0.74rem; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.cmd-stat strong { display: block; font-size: 1.35rem; font-weight: 800; margin-top: 2px; }
+
+/* ─── GAYA TRADING (kompak) ────────────────────────────────────────── */
+.cmd-style-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.cmd-style-chip {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 16px; border-radius: 14px; text-align: left;
+  background: var(--panel-2); border: 1.5px solid var(--border);
+  color: var(--text);
+  transition: all 0.2s ease;
+}
+.cmd-style-chip svg { color: var(--accent); }
+.cmd-style-chip:hover { transform: translateY(-2px); border-color: var(--accent); }
+.cmd-style-chip.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 7%, var(--panel));
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.cmd-style-chip .cs-label { font-weight: 800; font-size: 0.95rem; }
+.cmd-style-chip .cs-meta { font-size: 0.76rem; color: var(--muted); font-weight: 600; }
+
+/* ─── POSISI BERJALAN ──────────────────────────────────────────────── */
+.cmd-position-list, .cmd-hot-list { display: flex; flex-direction: column; gap: 8px; }
+
+.cmd-position, .cmd-hot {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%; padding: 12px 14px; border-radius: 12px;
+  background: var(--panel-2); border: 1px solid var(--border);
+  text-align: left; transition: all 0.16s ease;
+}
+.cmd-position:hover, .cmd-hot:hover {
+  background: var(--panel-3); transform: translateX(2px);
+  border-color: color-mix(in srgb, var(--cyan) 35%, var(--border));
+}
+
+.cp-token { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
+.cp-token strong { display: block; font-size: 0.95rem; font-weight: 700; }
+.cp-token small { display: block; font-size: 0.76rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+
+.cp-grade {
+  flex-shrink: 0;
+  display: grid; place-items: center;
+  min-width: 38px; height: 38px; padding: 0 8px;
+  border-radius: 10px; font-size: 0.82rem; font-weight: 800;
+}
+.cp-grade.grade-aplus { background: var(--green-soft); color: var(--green); border: 1px solid color-mix(in srgb, var(--green) 28%, transparent); }
+.cp-grade.grade-a { background: var(--cyan-soft); color: var(--cyan); border: 1px solid color-mix(in srgb, var(--cyan) 28%, transparent); }
+.cp-grade.grade-b { background: var(--amber-soft); color: var(--amber); border: 1px solid color-mix(in srgb, var(--amber) 28%, transparent); }
+
+.cp-pnl { font-size: 1.05rem; font-weight: 800; }
+.cp-pnl.up { color: var(--green); }
+.cp-pnl.down { color: var(--red); }
+
+.ch-info { flex: 1; min-width: 0; }
+.ch-info strong { display: block; font-size: 0.92rem; font-weight: 700; }
+.ch-info small { display: block; font-size: 0.76rem; color: var(--muted); }
+.ch-arrow { color: var(--muted); flex-shrink: 0; }
+.cmd-hot:hover .ch-arrow { color: var(--cyan); }
+
+/* ─── MISC ─────────────────────────────────────────────────────────── */
+.cmd-empty {
+  padding: 28px; text-align: center;
+  border: 1px dashed var(--border); border-radius: 12px;
+  background: var(--panel-2);
+}
+.cmd-empty p { margin: 0; font-size: 0.88rem; color: var(--muted); line-height: 1.5; }
+
+.cmd-update-chip {
+  font-size: 0.72rem; font-weight: 700; color: var(--muted);
+  padding: 5px 10px; border-radius: 8px; background: var(--panel-2);
+}
+
+.cmd-link {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 0.82rem; font-weight: 700; color: var(--cyan);
+  transition: gap 0.15s ease;
+}
+.cmd-link:hover { gap: 9px; }
+
+.cmd-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 10px; padding: 4px 4px 8px;
+}
+.btn-ghost-sm {
+  font-size: 0.8rem; font-weight: 700; color: var(--muted);
+  padding: 8px 14px; border-radius: 9px; border: 1px solid var(--border);
+  transition: all 0.15s ease;
+}
+.btn-ghost-sm:hover { color: var(--red); border-color: color-mix(in srgb, var(--red) 35%, var(--border)); }
+.cmd-mode-note { font-size: 0.76rem; color: var(--muted); }
+
+/* ─── RESPONSIVE ───────────────────────────────────────────────────── */
+@media (max-width: 860px) {
+  .cmd-hero { flex-direction: column; }
+  .cmd-hero-main { max-width: 100%; }
+  .cmd-hero-balance { align-items: flex-start; width: 100%; }
+  .cmd-stats { grid-template-columns: repeat(2, 1fr); }
+  .cmd-style-row { grid-template-columns: 1fr; }
+}
+
+/* Badge gaya aktif di header Sinyal Pasar */
+.style-tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 3px 10px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  border-radius: 999px;
+  vertical-align: middle;
+}
