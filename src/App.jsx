@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from './hooks/useAuth.jsx';
+import { useAuth } from './hooks/useSecureAuth.jsx';
 import LandingPage from './pages/LandingPage.jsx';
-import LoginPage from './pages/LoginPage.jsx';
+import SecureLoginPage from './pages/SecureLoginPage.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 
 export default function App() {
@@ -23,7 +23,7 @@ export default function App() {
     );
   }
 
-  if (route === 'login') return <LoginPage onBack={() => setRoute('landing')} />;
+  if (route === 'login') return <SecureLoginPage onBack={() => setRoute('landing')} />;
   if (route === 'dashboard') return <Dashboard onLogout={() => setRoute('landing')} />;
   return <LandingPage onLogin={() => setRoute('login')} />;
 }

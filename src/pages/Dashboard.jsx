@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  LogOut, RefreshCw, Activity, Trophy, Settings, Bot, Zap
+  LogOut, RefreshCw, Activity, Trophy, Settings, Bot, Zap, Download
 } from 'lucide-react';
-import { useAuth } from '../hooks/useAuth.jsx';
+import { useAuth } from '../hooks/useSecureAuth.jsx';
 import {
   refreshSignals,
   pollPrices,
@@ -199,6 +199,31 @@ export default function Dashboard({ onLogout }) {
 }
 
 function NavBar({ user, onLogout }) {
+  const { exportKeystore, isEncrypted } = useAuth();
+  const [exporting, setExporting] = useState(false);
+
+  const handleExportKeystore = async () => {
+    if (!isEncrypted) {
+      alert('Wallet ini tidak mendukung export keystore');
+      return;
+    }
+
+    setExporting(true);
+    try {
+      await exportKeystore();
+      alert('Keystore berhasil didownload!');
+    } catch (error) {
+      alert('Gagal export keystore: ' + error.message);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const shortAddress = (addr) => {
+    if (!addr) return 'Wallet';
+    return `${addr.slice(0, 4)}...${addr.slice(-4)}`;
+  };
+
   return (
     <nav className="site-nav">
       <div className="brand">
@@ -210,9 +235,25 @@ function NavBar({ user, onLogout }) {
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <div className="user-chip">
-          <div className="user-chip-avatar">{user?.name?.[0]?.toUpperCase() || 'T'}</div>
-          <span>{user?.name || 'Trader'}</span>
+          <div className="user-chip-avatar">{user?.publicKey?.[0]?.toUpperCase() || 'W'}</div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>{shortAddress(user?.publicKey)}</span>
+            <small style={{ fontSize: 11, color: 'var(--muted)' }}>
+              {user?.balanceSol?.toFixed(4) || '0.0000'} SOL
+            </small>
+          </div>
         </div>
+        {isEncrypted && (
+          <button
+            type="button"
+            className="btn-secondary"
+            style={{ padding: '8px 14px', fontSize: 13 }}
+            onClick={handleExportKeystore}
+            disabled={exporting}
+          >
+            <Download size={14} /> {exporting ? 'Exporting...' : 'Backup'}
+          </button>
+        )}
         <button type="button" className="btn-secondary" style={{ padding: '8px 14px', fontSize: 13 }} onClick={onLogout}>
           <LogOut size={14} /> Keluar
         </button>

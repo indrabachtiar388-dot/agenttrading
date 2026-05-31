@@ -1,29 +1,30 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 
 :root {
-  color-scheme: dark;
-  --bg: #0a0e1a;
-  --surface: #111827;
-  --card-bg: #1a1f2e;
-  --panel: #1a1f2e;
-  --panel-2: #151a28;
-  --panel-3: #0f1420;
-  --border: rgba(255, 255, 255, 0.08);
-  --line: rgba(255, 255, 255, 0.08);
-  --muted: #9ca3af;
-  --text: #f9fafb;
-  --soft: #d1d5db;
-  --green: #10b981;
-  --green-soft: rgba(16, 185, 129, 0.12);
-  --red: #ef4444;
-  --red-soft: rgba(239, 68, 68, 0.12);
-  --amber: #f59e0b;
-  --amber-soft: rgba(245, 158, 11, 0.12);
-  --cyan: #3b82f6;
-  --cyan-soft: rgba(59, 130, 246, 0.12);
-  --blue: #6366f1;
-  --blue-soft: rgba(99, 102, 241, 0.12);
-  --shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  color-scheme: light;
+  --bg: #f8fafc;
+  --surface: #ffffff;
+  --card-bg: #ffffff;
+  --panel: #ffffff;
+  --panel-2: #f1f5f9;
+  --panel-3: #e2e8f0;
+  --border: #e2e8f0;
+  --line: #e2e8f0;
+  --muted: #64748b;
+  --text: #0f172a;
+  --soft: #334155;
+  --green: #16a34a;
+  --green-soft: rgba(22, 163, 74, 0.08);
+  --red: #dc2626;
+  --red-soft: rgba(220, 38, 38, 0.08);
+  --amber: #d97706;
+  --amber-soft: rgba(217, 119, 6, 0.08);
+  --cyan: #0284c7;
+  --cyan-soft: rgba(2, 132, 199, 0.08);
+  --blue: #4f46e5;
+  --blue-soft: rgba(79, 70, 229, 0.08);
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
   --radius: 12px;
 }
 
