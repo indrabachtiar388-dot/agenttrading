@@ -3,7 +3,65 @@
   command = "npm run build"
   publish = "dist"
 
+# Environment variables (set in Netlify UI)
+# VITE_SOLANA_RPC
+# VITE_HELIUS_API_KEY
+# VITE_DEV_MODE
+# VITE_GA_TRACKING_ID
+# VITE_SENTRY_DSN
+
+# Redirect rules for SPA
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
+
+# Security headers
+[[headers]]
+  for = "/*"
+  [headers.values]
+    # Content Security Policy
+    Content-Security-Policy = """
+      default-src 'self';
+      script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com https://www.google-analytics.com;
+      style-src 'self' 'unsafe-inline';
+      img-src 'self' data: https: blob:;
+      font-src 'self' data:;
+      connect-src 'self' https://api.mainnet-beta.solana.com https://api.helius.xyz https://www.google-analytics.com wss://*.solana.com;
+      frame-ancestors 'none';
+      base-uri 'self';
+      form-action 'self';
+    """
+    # Security headers
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    X-XSS-Protection = "1; mode=block"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+    # HSTS
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains; preload"
+
+# Cache static assets
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# Cache HTML with revalidation
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+# Enable compression
+[[headers]]
+  for = "/*"
+  [headers.values]
+    # Prefer Brotli over Gzip
+    Accept-Encoding = "br, gzip"
+
+# Custom 404 page (optional)
+[[redirects]]
+  from = "/404"
+  to = "/index.html"
+  status = 404

@@ -4,6 +4,27 @@ import App from './App.jsx';
 import { AuthProvider } from './hooks/useSecureAuth.jsx';
 import './styles/main.css';
 import './styles/wallet.css';
+import './styles/live-trading.css';
+import './styles/social.css';
+
+// Import monitoring utilities
+import { initGA, trackPerformance, trackWebVitals } from './utils/analytics.js';
+import { initSentry } from './utils/errorTracking.js';
+
+// Initialize monitoring in production
+if (import.meta.env.VITE_DEV_MODE !== 'true') {
+  // Initialize error tracking
+  initSentry().catch(console.error);
+
+  // Initialize analytics
+  initGA();
+
+  // Track performance metrics
+  window.addEventListener('load', () => {
+    trackPerformance();
+    trackWebVitals();
+  });
+}
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

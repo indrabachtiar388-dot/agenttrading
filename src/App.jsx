@@ -1,8 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { useAuth } from './hooks/useSecureAuth.jsx';
-import LandingPage from './pages/LandingPage.jsx';
-import SecureLoginPage from './pages/SecureLoginPage.jsx';
-import Dashboard from './pages/Dashboard.jsx';
+
+// Lazy load pages for code splitting
+const LandingPage = lazy(() => import('./pages/LandingPage.jsx'));
+const SecureLoginPage = lazy(() => import('./pages/SecureLoginPage.jsx'));
+const Dashboard = lazy(() => import('./pages/Dashboard.jsx'));
+
+// Loading component
+const LoadingFallback = () => (
+  <div className="auth-loading">
+    <div className="auth-loading-orb" />
+    Memuat...
+  </div>
+);
 
 export default function App() {
   const { user, loading } = useAuth();
@@ -15,15 +25,14 @@ export default function App() {
   }, [user, loading]);
 
   if (loading) {
-    return (
-      <div className="auth-loading">
-        <div className="auth-loading-orb" />
-        Memuat...
-      </div>
-    );
+    return <LoadingFallback />;
   }
 
-  if (route === 'login') return <SecureLoginPage onBack={() => setRoute('landing')} />;
-  if (route === 'dashboard') return <Dashboard onLogout={() => setRoute('landing')} />;
-  return <LandingPage onLogin={() => setRoute('login')} />;
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      {route === 'login' && <SecureLoginPage onBack={() => setRoute('landing')} />}
+      {route === 'dashboard' && <Dashboard onLogout={() => setRoute('landing')} />}
+      {route === 'landing' && <LandingPage onLogin={() => setRoute('login')} />}
+    </Suspense>
+  );
 }

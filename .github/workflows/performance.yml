@@ -1,0 +1,101 @@
+name: Performance Monitoring
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+jobs:
+  lighthouse:
+    name: Lighthouse Performance Audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
+        env:
+          VITE_SOLANA_RPC: ${{ secrets.VITE_SOLANA_RPC }}
+          VITE_HELIUS_API_KEY: ${{ secrets.VITE_HELIUS_API_KEY }}
+          VITE_DEV_MODE: false
+
+      - name: Run Lighthouse CI
+        uses: treosh/lighthouse-ci-action@v10
+        with:
+          urls: |
+            http://localhost:4173
+          uploadArtifacts: true
+          temporaryPublicStorage: true
+          runs: 3
+
+      - name: Start preview server
+        run: |
+          npm run preview &
+          sleep 5
+
+      - name: Run Lighthouse audit
+        run: |
+          npm install -g @lhci/cli
+          lhci autorun --config=lighthouserc.json || true
+
+      - name: Upload Lighthouse results
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-results
+          path: .lighthouseci/
+          retention-days: 30
+
+  bundle-analysis:
+    name: Bundle Size Analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Analyze bundle
+        run: npm run build:analyze
+        env:
+          VITE_SOLANA_RPC: ${{ secrets.VITE_SOLANA_RPC }}
+          VITE_HELIUS_API_KEY: ${{ secrets.VITE_HELIUS_API_KEY }}
+          VITE_DEV_MODE: false
+
+      - name: Upload bundle analysis
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-analysis
+          path: dist/stats.html
+          retention-days: 30
+
+      - name: Check bundle size
+        run: |
+          BUNDLE_SIZE=$(du -sb dist | cut -f1)
+          MAX_SIZE=5242880  # 5MB in bytes
+
+          if [ $BUNDLE_SIZE -gt $MAX_SIZE ]; then
+            echo "::warning::Bundle size ($BUNDLE_SIZE bytes) exceeds maximum ($MAX_SIZE bytes)"
+          else
+            echo "::notice::Bundle size: $BUNDLE_SIZE bytes"
+          fi

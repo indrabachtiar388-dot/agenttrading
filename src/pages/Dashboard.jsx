@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  LogOut, RefreshCw, Activity, Trophy, Settings, Bot, Zap, Download
+  LogOut, RefreshCw, Activity, Trophy, Settings, Bot, Zap, Download, Store
 } from 'lucide-react';
 import { useAuth } from '../hooks/useSecureAuth.jsx';
+import { useLiveTrading } from '../hooks/useLiveTrading.jsx';
 import {
   refreshSignals,
   pollPrices,
@@ -16,10 +17,17 @@ import {
 import SignalCard from '../components/SignalCard.jsx';
 import SignalDetail from '../components/SignalDetail.jsx';
 import PerformancePanel from '../components/PerformancePanel.jsx';
+import LiveTradingPanel from '../components/LiveTradingPanel.jsx';
+import TradeConfirmationModal from '../components/TradeConfirmationModal.jsx';
+import Leaderboard from '../components/Leaderboard.jsx';
+import StrategyMarketplace from '../components/StrategyMarketplace.jsx';
 
 const TABS = [
   { key: 'signals', label: 'Sinyal Pasar', icon: Activity },
   { key: 'performance', label: 'Performa', icon: Trophy },
+  { key: 'live', label: 'Live Trading', icon: Zap },
+  { key: 'leaderboard', label: 'Peringkat', icon: Trophy },
+  { key: 'strategies', label: 'Strategi', icon: Store },
   { key: 'agent', label: 'Agent', icon: Settings },
 ];
 
@@ -27,6 +35,7 @@ const HISTORY_RESET_KEY = 'ma_history_reset_v2';
 
 export default function Dashboard({ onLogout }) {
   const { user } = useAuth();
+  const liveTrading = useLiveTrading();
   const [tab, setTab] = useState('signals');
   const [signals, setSignals] = useState(() => getCachedSignals());
   const [trades, setTrades] = useState(() => getBacktestTrades());
@@ -86,6 +95,16 @@ export default function Dashboard({ onLogout }) {
     setSignals(s);
     setTrades(getBacktestTrades());
     setSignalHistory(getSignalHistory());
+
+    // Auto-execute live trading jika enabled
+    if (liveTrading.isEnabled && liveTrading.settings.autoExecute) {
+      for (const signal of s) {
+        if (['A+', 'A'].includes(signal.grade)) {
+          await liveTrading.autoExecuteSignal(signal);
+        }
+      }
+    }
+
     setScanning(false);
   };
 
@@ -179,6 +198,15 @@ export default function Dashboard({ onLogout }) {
       {tab === 'performance' && (
         <PerformancePanel stats={stats} trades={trades} signalHistory={signalHistory} onReset={handleReset} />
       )}
+      {tab === 'live' && (
+        <LiveTradingPanel />
+      )}
+      {tab === 'leaderboard' && (
+        <Leaderboard currentUserId={user?.publicKey} />
+      )}
+      {tab === 'strategies' && (
+        <StrategyMarketplace currentUser={user?.publicKey ? `${user.publicKey.slice(0, 4)}…${user.publicKey.slice(-4)}` : 'anon'} />
+      )}
       {tab === 'agent' && (
         <AgentTab agentOn={agentOn} onToggle={toggleAgent} onReset={handleReset} />
       )}
@@ -188,6 +216,21 @@ export default function Dashboard({ onLogout }) {
           signal={selectedSignal}
           trade={tradesMap.get(selectedSignal.ca)}
           onClose={() => setSelectedCa(null)}
+        />
+      )}
+
+      {liveTrading.pendingTrade && (
+        <TradeConfirmationModal
+          trade={liveTrading.pendingTrade}
+          onConfirm={async () => {
+            const result = await liveTrading.confirmPendingTrade();
+            if (result.success) {
+              showToast('✅ Trade berhasil dieksekusi!');
+            } else {
+              showToast('❌ Trade gagal: ' + result.error);
+            }
+          }}
+          onCancel={liveTrading.cancelPendingTrade}
         />
       )}
 
