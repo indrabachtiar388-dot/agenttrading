@@ -100,12 +100,29 @@ export function saveStyleId(styleId) {
  * Dipakai untuk memilih kandidat terbaik saat mengisi slot kosong.
  * Makin tinggi = makin layak diambil sekarang.
  */
+/** Umur token dalam menit; null/tak diketahui dianggap 0 (fresh) agar tidak salah tolak. */
+function ageMinutesOf(signal) {
+  const v = signal.ageMinutes ?? signal.age;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Runner score dengan fallback berlapis (shortcut field → explain). */
+function runnerScoreOf(signal) {
+  return Number(signal.runnerScore ?? signal.explain?.runnerSummary?.score ?? 0);
+}
+
+/** Buy ratio dengan fallback ke explain bila ada, default netral 0.5. */
+function buyRatioOf(signal) {
+  return Number(signal.buyRatio ?? signal.explain?.orderFlow?.buyRatio ?? 0.5);
+}
+
 export function momentumScore(signal, style) {
-  const ageMin = Number(signal.ageMinutes ?? signal.age ?? 999);
+  const ageMin = ageMinutesOf(signal);
   const m5 = Number(signal.m5 || 0);
   const h1 = Number(signal.h1 || 0);
   const confidence = Number(signal.confidence || 0);
-  const runner = Number(signal.explain?.runnerSummary?.score || 0);
+  const runner = runnerScoreOf(signal);
   const gradeRank = { 'A+': 30, A: 20, B: 8, C: 0 }[signal.grade] || 0;
 
   // Penalti umur: makin tua makin turun, dipertajam untuk style hyper
@@ -130,16 +147,15 @@ export function passesStyleGate(signal, style) {
   if (!style.allowedGrades.includes(signal.grade)) return false;
   if (Number(signal.confidence || 0) < style.minConfidence) return false;
 
-  const runner = Number(signal.explain?.runnerSummary?.score || 0);
+  const runner = runnerScoreOf(signal);
   if (runner < style.minRunnerScore) return false;
 
-  // Buy pressure dari explain (kalau ada)
-  const buyRatio = Number(signal.explain?.orderFlow?.buyRatio ?? signal.buyRatio ?? 0.55);
+  const buyRatio = buyRatioOf(signal);
   if (buyRatio < style.minBuyRatio) return false;
 
-  // Freshness gate (jangan ambil token yang sudah terlalu matang untuk style cepat)
-  const ageMin = Number(signal.ageMinutes ?? 999);
-  if (Number.isFinite(ageMin) && ageMin > style.freshnessMaxMinutes * 1.5) return false;
+  // Freshness gate: hanya tolak jika umur DIKETAHUI dan melebihi ambang style.
+  const ageMin = ageMinutesOf(signal);
+  if (ageMin > 0 && ageMin > style.freshnessMaxMinutes * 1.5) return false;
 
   return true;
 }
@@ -151,8 +167,10 @@ export function passesStyleGate(signal, style) {
 export function applyStyleToSignal(signal, style) {
   if (!signal.entry) return signal;
 
-  const slPct = Number(signal.slPct || 0) * style.slMultiplier;
-  const tpPct = Number(signal.tpPct || 0) * style.tpMultiplier;
+  // Clamp ke batas desain risiko (samakan dengan deriveSlTp di autoTrader).
+  const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+  const slPct = clamp(Number(signal.slPct || 0) * style.slMultiplier, 6, 26);
+  const tpPct = clamp(Number(signal.tpPct || 0) * style.tpMultiplier, 12, 200);
 
   return {
     ...signal,
@@ -161,6 +179,7 @@ export function applyStyleToSignal(signal, style) {
     sl: signal.entry * (1 - slPct / 100),
     tp: signal.entry * (1 + tpPct / 100),
     styleId: style.id,
+    styleTpMultiplier: style.tpMultiplier,  // diteruskan ke exit engine untuk skala tier
   };
 }
 

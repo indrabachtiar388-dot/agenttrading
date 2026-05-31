@@ -58,6 +58,9 @@ export default function Dashboard({ onLogout }) {
   const agentOnRef = useRef(agentOn);
   agentOnRef.current = agentOn;
 
+  // Guard agar scan tidak tumpang tindih (race condition di interval 20s + ganti style).
+  const isRefreshingRef = useRef(false);
+
   const tradesMap = useMemo(() => {
     const m = new Map();
     trades.filter((t) => t.status === 'ACTIVE').forEach((t) => m.set(t.ca, t));
@@ -91,22 +94,28 @@ export default function Dashboard({ onLogout }) {
   }), [displaySignals]);
 
   const handleRefreshSignals = async () => {
+    // Skip jika scan sebelumnya masih berjalan (hindari race di localStorage).
+    if (isRefreshingRef.current) return;
+    isRefreshingRef.current = true;
     setScanning(true);
-    const s = await refreshSignals({ autoTrack: agentOnRef.current, styleId: styleIdRef.current });
-    setSignals(s);
-    setTrades(getBacktestTrades());
-    setSignalHistory(getSignalHistory());
+    try {
+      const s = await refreshSignals({ autoTrack: agentOnRef.current, styleId: styleIdRef.current });
+      setSignals(s);
+      setTrades(getBacktestTrades());
+      setSignalHistory(getSignalHistory());
 
-    // Auto-execute live trading jika enabled
-    if (liveTrading.isEnabled && liveTrading.settings.autoExecute) {
-      for (const signal of s) {
-        if (['A+', 'A'].includes(signal.grade)) {
-          await liveTrading.autoExecuteSignal(signal);
+      // Auto-execute live trading jika enabled
+      if (liveTrading.isEnabled && liveTrading.settings.autoExecute) {
+        for (const signal of s) {
+          if (['A+', 'A'].includes(signal.grade)) {
+            await liveTrading.autoExecuteSignal(signal);
+          }
         }
       }
+    } finally {
+      isRefreshingRef.current = false;
+      setScanning(false);
     }
-
-    setScanning(false);
   };
 
   const handleStyleChange = (newStyleId) => {

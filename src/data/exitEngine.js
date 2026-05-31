@@ -28,11 +28,15 @@ import { getVelocity } from './snapshotStore';
  * - Hot meta + first mover: tier naik 50% (lebih tinggi, hold lebih lama)
  * - Saturated + copycat: tier turun 30% (exit lebih cepat)
  */
-function getTiers(grade, entry, narrative = null) {
+function getTiers(grade, entry, narrative = null, styleTpMultiplier = 1) {
+  // styleTpMultiplier: <1 = realisasi lebih cepat (Agresif/Hyper), >1 = tahan lebih lama (Konservatif).
+  // Diterapkan ke jarak tier dari entry (1.0 + (mult-1)*styleTpMultiplier) agar arah tetap profit.
+  const styleScale = (m) => 1 + (m - 1) * (Number(styleTpMultiplier) || 1);
+
   const mult = (n) => {
-    let base = n;
-    if (narrative?.isHotMeta && narrative?.isFirstMover) base *= 1.5;
-    else if (narrative?.isSaturated && !narrative?.isFirstMover) base *= 0.7;
+    let base = styleScale(n);
+    if (narrative?.isHotMeta && narrative?.isFirstMover) base = 1 + (base - 1) * 1.5;
+    else if (narrative?.isSaturated && !narrative?.isFirstMover) base = 1 + (base - 1) * 0.7;
     return base;
   };
 
@@ -44,11 +48,11 @@ function getTiers(grade, entry, narrative = null) {
       : [0.30, 0.30, 0.20, 0.10, 0.10]; // B lebih cepat exit
 
   return [
-    { name: 'T1', multiple: mult(1.20), price: entry * mult(1.20), size: sizes[0], action: 'PARTIAL_EXIT' },
-    { name: 'T2', multiple: mult(1.50), price: entry * mult(1.50), size: sizes[1], action: 'PARTIAL_EXIT' },
-    { name: 'T3', multiple: mult(2.50), price: entry * mult(2.50), size: sizes[2], action: 'PARTIAL_EXIT' },
-    { name: 'T4', multiple: mult(4.00), price: entry * mult(4.00), size: sizes[3], action: 'PARTIAL_EXIT' },
-    { name: 'MOONBAG', multiple: null, price: null, size: sizes[4], action: 'TRAIL' }
+    { name: 'T1', multiple: mult(1.20), price: entry * mult(1.20), size: sizes[0], action: 'PARTIAL_EXIT', hit: false },
+    { name: 'T2', multiple: mult(1.50), price: entry * mult(1.50), size: sizes[1], action: 'PARTIAL_EXIT', hit: false },
+    { name: 'T3', multiple: mult(2.50), price: entry * mult(2.50), size: sizes[2], action: 'PARTIAL_EXIT', hit: false },
+    { name: 'T4', multiple: mult(4.00), price: entry * mult(4.00), size: sizes[3], action: 'PARTIAL_EXIT', hit: false },
+    { name: 'MOONBAG', multiple: null, price: null, size: sizes[4], action: 'TRAIL', hit: false }
   ];
 }
 
@@ -199,9 +203,13 @@ export function computeExitActions(trade, currentPrice, liveToken, currentSignal
     }
   }
 
-  // 4. Partial exits di tier bertingkat (multiple-based)
-  const activeTiers = tiers || getTiers(grade, tierBase, narrative);
-  for (const tier of activeTiers) {
+  // 4. Partial exits di tier bertingkat (multiple-based).
+  // Tier di-clone agar tidak memutasi objek trade lama; hasilnya dipersist via nextTiers.
+  const styleTpMultiplier = trade.signal?.styleTpMultiplier ?? trade.styleTpMultiplier ?? 1;
+  const sourceTiers = tiers && tiers.length ? tiers : getTiers(grade, tierBase, narrative, styleTpMultiplier);
+  const nextTiers = sourceTiers.map((t) => ({ ...t }));
+
+  for (const tier of nextTiers) {
     if (tier.action !== 'PARTIAL_EXIT') continue;
     if (tier.hit) continue;
 
@@ -216,6 +224,7 @@ export function computeExitActions(trade, currentPrice, liveToken, currentSignal
       }
     }
   }
+  const activeTiers = nextTiers;
 
   // 5. Trailing stop untuk moonbag (setelah semua tier partial hit)
   const allPartialsHit = activeTiers.filter(t => t.action === 'PARTIAL_EXIT').every(t => t.hit);
@@ -233,11 +242,11 @@ export function computeExitActions(trade, currentPrice, liveToken, currentSignal
       actions.push({ type: 'FULL_EXIT', price: currentPrice, size: positionRemaining, reason: 'Trailing stop hit' });
       newStatus = 'WIN';
       reason = `Trailing stop @ ${multiple.toFixed(1)}x — exit ${currentPnlPct.toFixed(1)}%`;
-      return { actions, newStop: trailStop, newStatus, reason };
+      return { actions, newStop: trailStop, newStatus, reason, tiers: activeTiers };
     }
   }
 
-  return { actions, newStop, newStatus, reason };
+  return { actions, newStop, newStatus, reason, tiers: activeTiers };
 }
 
 /**

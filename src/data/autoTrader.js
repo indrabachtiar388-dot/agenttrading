@@ -28,8 +28,15 @@ function loadTrades() {
     return raw ? JSON.parse(raw) : [];
   } catch { return []; }
 }
+const MAX_CLOSED_TRADES = 200; // arsip dibatasi agar array tidak tumbuh tanpa batas
 function saveTrades(list) {
-  localStorage.setItem(TRADES_KEY, JSON.stringify(list));
+  // Pertahankan semua ACTIVE + maksimum N closed terbaru (urut by closedAt desc).
+  const active = list.filter((t) => t.status === 'ACTIVE');
+  const closed = list
+    .filter((t) => t.status !== 'ACTIVE')
+    .sort((a, b) => (b.closedAt || 0) - (a.closedAt || 0))
+    .slice(0, MAX_CLOSED_TRADES);
+  localStorage.setItem(TRADES_KEY, JSON.stringify([...active, ...closed]));
 }
 function loadSignals() {
   try {
@@ -220,6 +227,14 @@ function chartUrlFor(token) {
   return token.url || token.pairUrl || `https://dexscreener.com/solana/${token.ca}`;
 }
 
+function computeBuyRatio(token) {
+  const flags = token.flags || {};
+  const buys = Number(flags.buys5m || 0);
+  const sells = Number(flags.sells5m || 0);
+  const total = buys + sells;
+  return total > 0 ? buys / total : 0.5;
+}
+
 function buildSignal(token, report, rug, runner, narrative = null) {
   const price = Number(token.priceUsd || 0);
   const { grade, side, confidence, reasons } = gradeSignal(token, report, rug, runner, narrative);
@@ -258,6 +273,8 @@ function buildSignal(token, report, rug, runner, narrative = null) {
     ageMinutes: token.ageMinutes ?? null,
     m5: token.priceChange?.m5 ?? 0,
     h1: token.priceChange?.h1 ?? 0,
+    buyRatio: computeBuyRatio(token),       // dipakai oleh style gate (passesStyleGate)
+    runnerScore: Number(runner?.runnerScore || 0), // shortcut agar gate tidak gali explain
     url: chartUrlFor(token),
     tracked: TRACKED_GRADES.has(grade),
     explain,
@@ -463,17 +480,17 @@ export function applyPriceUpdates(signals, trades, liveTokens) {
     const peakPrice = Math.max(t.peakPrice || t.entry, currentPrice);
 
     // Compute exit actions dari exit engine
-    const { actions, newStop, newStatus, reason } = computeExitActions(t, currentPrice, live, snapshot);
+    const { actions, newStop, newStatus, reason, tiers } = computeExitActions(t, currentPrice, live, snapshot);
 
     if (actions.length === 0) {
-      // Tidak ada action, update PnL saja
+      // Tidak ada action, update PnL saja. Persist tiers (status hit) agar tidak dihitung ulang.
       const positionRemaining = t.positionRemaining ?? 1.0;
       const realizedPnl = t.realizedPnl || 0;
       const unrealizedPnl = ((currentPrice - t.entry) / t.entry) * 100 * positionRemaining;
       const pnlPct = realizedPnl + unrealizedPnl;
 
       tradesChanged = true;
-      return { ...t, pnlPct, lastPrice: currentPrice, peakPrice, signal: snapshot };
+      return { ...t, pnlPct, lastPrice: currentPrice, peakPrice, signal: snapshot, tiers: tiers || t.tiers };
     }
 
     // Apply exit actions
@@ -485,6 +502,7 @@ export function applyPriceUpdates(signals, trades, liveTokens) {
     updatedTrade.peakPrice = peakPrice;
     updatedTrade.signal = snapshot;
     updatedTrade.exitReason = reason;
+    updatedTrade.tiers = tiers || updatedTrade.tiers;  // persist tier hit state
 
     return updatedTrade;
   });
@@ -521,10 +539,12 @@ export function openBacktestTrade(signal, style = null) {
     if (activeCount >= style.maxPositions) return null;
   }
 
-  // Cooldown re-entry: pakai cooldown style kalau ada, fallback ke default.
+  // Cooldown re-entry: ambil penutupan PALING BARU untuk CA ini (bukan find pertama).
   const cooldown = style?.rotationCooldownMs ?? REENTRY_COOLDOWN_MS;
-  const lastClosed = trades.find((t) => t.ca === signal.ca && t.closedAt);
-  if (lastClosed && Date.now() - lastClosed.closedAt < cooldown) return null;
+  const lastClosedAt = trades
+    .filter((t) => t.ca === signal.ca && t.closedAt)
+    .reduce((max, t) => Math.max(max, t.closedAt), 0);
+  if (lastClosedAt && Date.now() - lastClosedAt < cooldown) return null;
 
   const now = Date.now();
   const trade = {
@@ -535,6 +555,7 @@ export function openBacktestTrade(signal, style = null) {
     grade: signal.grade,
     side: signal.side,
     styleId: signal.styleId || style?.id || null,
+    styleTpMultiplier: signal.styleTpMultiplier ?? style?.tpMultiplier ?? 1,
     initialEntry: signal.entry,
     entry: signal.entry,
     sl: signal.sl,
