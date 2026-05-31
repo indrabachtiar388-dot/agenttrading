@@ -21,31 +21,10 @@ const MAX_B_SIGNALS = 1;
 /* Jeda sebelum token yang sama boleh di-entry ulang setelah ditutup. */
 const REENTRY_COOLDOWN_MS = 5 * 60 * 1000;
 
-function computeAvgEntry(entries) {
-  if (!entries || entries.length === 0) return 0;
-  const totalWeight = entries.reduce((s, e) => s + (e.pct || 0), 0);
-  if (totalWeight <= 0) return 0;
-  const weightedSum = entries.reduce((s, e) => s + (e.price || 0) * (e.pct || 0), 0);
-  return weightedSum / totalWeight;
-}
-
 function loadTrades() {
   try {
     const raw = localStorage.getItem(TRADES_KEY);
-    const list = raw ? JSON.parse(raw) : [];
-    // Migrasi trade lama tanpa DCA entries
-    return list.map((t) => {
-      if (!t.entries || t.entries.length === 0) {
-        return {
-          ...t,
-          entries: [{ price: t.entry, pct: 100, at: t.openedAt || Date.now() }],
-          initialEntry: t.initialEntry || t.entry,
-          dcaCount: t.dcaCount ?? 0,
-          nextDcaAt: t.nextDcaAt ?? Date.now(),
-        };
-      }
-      return t;
-    });
+    return raw ? JSON.parse(raw) : [];
   } catch { return []; }
 }
 function saveTrades(list) {
@@ -430,49 +409,7 @@ export async function refreshSignals({ autoTrack = true } = {}) {
 }
 
 /* ─── DCA Engine ────────────────────────────────────────────────────────── */
-/**
- * Simulasi DCA (Dollar Cost Averaging) bertingkat untuk backtest.
- * Entry awal 40%. DCA tambahan hanya saat harga turun dari avg entry
- * tapi masih di atas SL + buffer keselamatan. Cooldown antar DCA 90 detik.
- *
- * DCA 1: 35% posisi, saat harga turun >= 5% dari avg entry saat ini.
- * DCA 2: 25% posisi, saat harga turun >= 10% dari avg entry saat ini.
- *
- * SL absolute tetap sama (dari entry awal). Avg entry diperbarui
- * untuk perhitungan PnL yang lebih realistis.
- */
-function maybeDCA(trade, currentPrice) {
-  if (trade.status !== 'ACTIVE') return null;
-  if (trade.dcaCount >= 2) return null;
-  if (Date.now() < (trade.nextDcaAt || 0)) return null;
-  if (!currentPrice || currentPrice <= 0) return null;
 
-  const avgEntry = computeAvgEntry(trade.entries);
-  if (!avgEntry || avgEntry <= 0) return null;
-
-  const dropPct = ((avgEntry - currentPrice) / avgEntry) * 100;
-  const minDrop = trade.dcaCount === 0 ? 5.0 : 10.0;
-  const bufferAboveSl = 1.04; // minimal 4% di atas SL absolute
-
-  if (dropPct < minDrop) return null;
-  if (currentPrice <= trade.sl * bufferAboveSl) return null;
-
-  const weight = trade.dcaCount === 0 ? 35 : 25;
-  const newEntries = [
-    ...trade.entries,
-    { price: currentPrice, pct: weight, at: Date.now() }
-  ];
-  const newAvg = computeAvgEntry(newEntries);
-
-  return {
-    ...trade,
-    entries: newEntries,
-    entry: newAvg,
-    dcaCount: (trade.dcaCount || 0) + 1,
-    nextDcaAt: Date.now() + 90000, // 90s cooldown
-    lastPrice: currentPrice,
-  };
-}
 
 /* ─── Real-time Price Poll ──────────────────────────────────────────────── */
 export async function pollPrices(addresses) {
@@ -511,34 +448,26 @@ export function applyPriceUpdates(signals, trades, liveTokens) {
       return { ...t, signal: snapshot };
     }
 
-    // 1. Cek DCA: tambah entry bertingkat jika kondisi terpenuhi
-    let tradeAfterDCA = maybeDCA(t, currentPrice);
-    if (tradeAfterDCA) {
-      tradesChanged = true;
-    } else {
-      tradeAfterDCA = t;
-    }
-
     // Update peak price untuk trailing stop
-    const peakPrice = Math.max(tradeAfterDCA.peakPrice || tradeAfterDCA.entry, currentPrice);
+    const peakPrice = Math.max(t.peakPrice || t.entry, currentPrice);
 
-    // 2. Compute exit actions dari exit engine
-    const { actions, newStop, newStatus, reason } = computeExitActions(tradeAfterDCA, currentPrice, live);
+    // Compute exit actions dari exit engine
+    const { actions, newStop, newStatus, reason } = computeExitActions(t, currentPrice, live, snapshot);
 
     if (actions.length === 0) {
       // Tidak ada action, update PnL saja
-      const positionRemaining = tradeAfterDCA.positionRemaining ?? 1.0;
-      const realizedPnl = tradeAfterDCA.realizedPnl || 0;
-      const unrealizedPnl = ((currentPrice - tradeAfterDCA.entry) / tradeAfterDCA.entry) * 100 * positionRemaining;
+      const positionRemaining = t.positionRemaining ?? 1.0;
+      const realizedPnl = t.realizedPnl || 0;
+      const unrealizedPnl = ((currentPrice - t.entry) / t.entry) * 100 * positionRemaining;
       const pnlPct = realizedPnl + unrealizedPnl;
 
       tradesChanged = true;
-      return { ...tradeAfterDCA, pnlPct, lastPrice: currentPrice, peakPrice, signal: snapshot };
+      return { ...t, pnlPct, lastPrice: currentPrice, peakPrice, signal: snapshot };
     }
 
     // Apply exit actions
     tradesChanged = true;
-    const updatedTrade = applyExitActions(tradeAfterDCA, actions, currentPrice);
+    const updatedTrade = applyExitActions(t, actions, currentPrice);
     updatedTrade.status = newStatus;
     updatedTrade.sl = newStop;
     updatedTrade.lastPrice = currentPrice;
@@ -586,8 +515,8 @@ export function openBacktestTrade(signal) {
     name: signal.name,
     grade: signal.grade,
     side: signal.side,
-    initialEntry: signal.entry, // harga entry awal (untuk tier TP)
-    entry: signal.entry,        // avg entry (berubah saat DCA)
+    initialEntry: signal.entry,
+    entry: signal.entry,
     sl: signal.sl,
     tp: signal.tp,
     slPct: signal.slPct,
@@ -599,11 +528,6 @@ export function openBacktestTrade(signal) {
     closePrice: null,
     lastPrice: signal.priceUsd || signal.entry,
     pnlPct: 0,
-    // DCA fields
-    entries: [{ price: signal.entry, pct: 40, at: now }],
-    dcaCount: 0,
-    nextDcaAt: now + 45000, // minimal 45s sebelum DCA pertama boleh terjadi
-    // Field baru untuk exit engine multi-X
     positionRemaining: 1.0,
     realizedPnl: 0,
     peakPrice: signal.entry,
@@ -636,9 +560,16 @@ export function getBacktestStats() {
     : 0;
   const allPct = closed.map((t) => t.pnlPct || 0);
   const totalPnlPct = allPct.reduce((s, v) => s + v, 0);
-  const avgDcaCount = closed.length
-    ? closed.reduce((s, t) => s + (t.dcaCount || 0), 0) / closed.length
+  // Multiple stats: rata-rata multiple saat close (closePrice / initialEntry)
+  const multiples = closed
+    .filter((t) => t.closePrice && t.initialEntry)
+    .map((t) => t.closePrice / t.initialEntry);
+  const avgMultiple = multiples.length
+    ? multiples.reduce((s, m) => s + m, 0) / multiples.length
     : 0;
+  const over3x = multiples.filter((m) => m >= 3).length;
+  const over5x = multiples.filter((m) => m >= 5).length;
+  const over10x = multiples.filter((m) => m >= 10).length;
 
   return {
     total: closed.length,
@@ -652,7 +583,10 @@ export function getBacktestStats() {
     totalPnlPct,
     bestPct: allPct.length ? Math.max(...allPct) : 0,
     worstPct: allPct.length ? Math.min(...allPct) : 0,
-    avgDcaCount
+    avgMultiple,
+    over3x,
+    over5x,
+    over10x
   };
 }
 

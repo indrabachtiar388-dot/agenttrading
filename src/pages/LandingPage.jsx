@@ -18,8 +18,8 @@ const FEATURES = [
   },
   {
     icon: TrendingUp,
-    title: 'Grade & Level Jelas',
-    text: 'Tiap sinyal diberi grade (A+, A, atau High Risk) lengkap dengan harga Entry, Stop Loss, dan Take Profit yang dihitung relatif per token.'
+    title: 'Adaptive Exit — Bukan SL/TP Kaku',
+    text: 'Tier take-profit bertingkat (1.2x, 1.5x, 2.5x, 4x) + moonbag dengan trailing stop adaptif. Makin tinggi multiple, makin longgar trail-nya — siap tangkap runner 10x-50x.'
   },
   {
     icon: BookOpen,
@@ -28,8 +28,8 @@ const FEATURES = [
   },
   {
     icon: Gauge,
-    title: 'Backtest Berjalan + DCA Realistis',
-    text: 'Sinyal di-entry virtual secara bertahap (40% awal, 35%, 25%) — bukan all-in. Avg entry diperbarui otomatis, PnL dihitung dari posisi rata-rata seperti trader sungguhan.'
+    title: 'Backtest Berjalan',
+    text: 'Sinyal di-entry virtual all-in pada harga live, lalu dipantau sampai tier TP atau trailing stop tersentuh. PnL dihitung real-time sesuai pergerakan pasar.'
   },
   {
     icon: ShieldCheck,

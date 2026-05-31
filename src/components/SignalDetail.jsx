@@ -130,15 +130,7 @@ export default function SignalDetail({ signal, trade, onClose }) {
             <div className="sd-levelbox"><span>Status</span><strong style={{ color: trade?.status === 'WIN' ? 'var(--green)' : trade?.status === 'LOSS' ? 'var(--red)' : trade?.status === 'ACTIVE' ? 'var(--cyan)' : 'var(--muted)' }}>{trade?.status || (signal.tracked ? 'SIAP' : 'PENDING')}</strong></div>
           </div>
 
-          {trade?.entries && trade.entries.length > 1 && (
-            <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {trade.entries.map((e, i) => (
-                <span key={i} className="sd-dca-chip" title={`Entry ${i + 1} @ ${formatUsd(e.price)} (${e.pct}%)`}>
-                  Entry {i + 1}: {formatUsd(e.price)} · {e.pct}%
-                </span>
-              ))}
-            </div>
-          )}
+
 
           {trade && (
             <div style={{ marginTop: 12, display: 'flex', gap: 8, fontSize: 12, color: 'var(--muted)', flexWrap: 'wrap' }}>
@@ -180,6 +172,46 @@ export default function SignalDetail({ signal, trade, onClose }) {
             </div>
           )}
         </Section>
+
+        {/* Posisi & Runner Mode */}
+        {trade && trade.status === 'ACTIVE' && (
+          <Section icon={Rocket} title="Posisi & Runner Mode" accent="var(--blue)">
+            <div className="sd-levelgrid">
+              <div className="sd-levelbox">
+                <span>Multiple</span>
+                <strong className="text-cyan">{(signal.priceUsd / (trade.initialEntry || trade.entry)).toFixed(1)}x</strong>
+              </div>
+              <div className="sd-levelbox">
+                <span>Posisi Tersisa</span>
+                <strong>{((trade.positionRemaining ?? 1.0) * 100).toFixed(0)}%</strong>
+              </div>
+              <div className="sd-levelbox">
+                <span>Realized PnL</span>
+                <strong className={trade.realizedPnl >= 0 ? 'text-green' : 'text-red'}>{trade.realizedPnl >= 0 ? '+' : ''}{(trade.realizedPnl || 0).toFixed(1)}%</strong>
+              </div>
+            </div>
+            <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {['T1','T2','T3','T4'].map((t) => {
+                const hit = trade.exitEvents?.some(e => e.tier === t);
+                return (
+                  <span key={t} className="sd-tier-chip" style={{ background: hit ? 'rgba(5,150,105,0.08)' : 'rgba(18,22,33,0.04)', color: hit ? 'var(--green)' : 'var(--muted)', borderColor: hit ? 'rgba(5,150,105,0.2)' : 'var(--line)' }}>
+                    {hit ? '✓' : '○'} {t}
+                  </span>
+                );
+              })}
+              {trade.positionRemaining > 0 && trade.positionRemaining < 1.0 && (
+                <span className="sd-tier-chip" style={{ background: 'rgba(79,70,229,0.08)', color: 'var(--blue)', borderColor: 'rgba(79,70,229,0.2)' }}>
+                  🌙 Moonbag {(trade.positionRemaining * 100).toFixed(0)}%
+                </span>
+              )}
+            </div>
+            {trade.peakPrice && trade.peakPrice > trade.entry && (
+              <p className="sd-text" style={{ marginTop: 8 }}>
+                Peak: <strong className="text-cyan">{formatUsd(trade.peakPrice)}</strong> ({((trade.peakPrice / trade.entry - 1) * 100).toFixed(0)}%) · Trail aktif saat moonbag tersisa
+              </p>
+            )}
+          </Section>
+        )}
 
         {/* Kenapa Entry */}
         <Section icon={TrendingUp} title="Kenapa Sinyal Ini Muncul" accent="var(--green)">

@@ -76,6 +76,20 @@ export default function SignalCard({ signal, trade, onClick }) {
         <span className={chip.cls}>{chip.label}</span>
       </div>
 
+      {trade?.exitEvents && trade.exitEvents.length > 0 && (
+        <div className="sc-tier-progress">
+          {['T1','T2','T3','T4'].map((t) => {
+            const hit = trade.exitEvents.some(e => e.tier === t);
+            return (
+              <span key={t} className={`sc-tier ${hit ? 'hit' : ''}`}>{hit ? '✓' : '○'} {t}</span>
+            );
+          })}
+          {trade.positionRemaining > 0 && trade.positionRemaining < 1.0 && (
+            <span className="sc-tier moon">🌙 {trade.positionRemaining < 0.2 ? 'EXIT' : `${(trade.positionRemaining * 100).toFixed(0)}%`}</span>
+          )}
+        </div>
+      )}
+
       <div className="sc-conf" title={`Keyakinan engine ${conf}%`}>
         <div className="sc-conf-top"><span>Keyakinan</span><strong>{conf}%</strong></div>
         <div className="sc-conf-bar"><div style={{ width: `${conf}%`, background: meta.color }} /></div>
@@ -95,23 +109,10 @@ export default function SignalCard({ signal, trade, onClick }) {
 
       <div className="sc-levels">
         <div className="sc-level"><span>Harga</span><strong>{formatUsd(signal.priceUsd)}</strong></div>
-        <div className="sc-level">
-          <span>{trade?.entries && trade.entries.length > 1 ? 'Avg Entry' : 'Entry'}</span>
-          <strong>{entry ? formatUsd(entry) : '-'}</strong>
-        </div>
+        <div className="sc-level"><span>Entry</span><strong>{entry ? formatUsd(entry) : '-'}</strong></div>
         <div className="sc-level"><span>Stop Loss</span><strong className="text-red">{entry ? `-${slPct}%` : '-'}</strong></div>
         <div className="sc-level"><span>Take Profit</span><strong className="text-green">{entry ? `+${tpPct}%` : '-'}</strong></div>
       </div>
-
-      {trade?.entries && trade.entries.length > 1 && (
-        <div className="sc-dca">
-          {trade.entries.map((e, i) => (
-            <span key={i} className="sc-dca-tag" title={`Entry ${i + 1}: ${formatUsd(e.price)} (${e.pct}%)`}>
-              E{i + 1} {formatUsd(e.price)} · {e.pct}%
-            </span>
-          ))}
-        </div>
-      )}
 
       <div className="sc-meta">
         <span title="Likuiditas"><Droplets size={12} /> {formatUsd(signal.liquidityUsd)}</span>

@@ -111,7 +111,10 @@ export default function PerformancePanel({ stats, trades = [], signalHistory = [
             <StatBox label="Total PnL" value={fmt(stats.totalPnlPct, true)} tone={stats.totalPnlPct >= 0 ? 'up' : 'down'} />
             <StatBox label="Trade Terbaik" value={fmt(stats.bestPct, true)} tone="up" />
             <StatBox label="Trade Terburuk" value={fmt(stats.worstPct)} tone="down" />
-            <StatBox label="Rata-rata DCA" value={(stats.avgDcaCount || 0).toFixed(1)} tone="cyan" sub="per trade" />
+            <StatBox label="Avg Multiple" value={`${(stats.avgMultiple || 0).toFixed(1)}x`} tone={stats.avgMultiple >= 2 ? 'up' : 'cyan'} sub="saat exit" />
+            <StatBox label="Runner >3x" value={stats.over3x || 0} tone="up" sub={`dari ${stats.total} trade`} />
+            <StatBox label="Runner >5x" value={stats.over5x || 0} tone="up" sub={`dari ${stats.total} trade`} />
+            <StatBox label="Moon >10x" value={stats.over10x || 0} tone="up" sub={`dari ${stats.total} trade`} />
           </div>
 
           <EquityCurve trades={trades} />
