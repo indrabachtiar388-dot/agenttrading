@@ -162,8 +162,11 @@ export async function fetchHermesSol() {
     return hermesSolCache.price;
   }
   try {
+    // Backend shape: { prices: { [feedId]: { price, conf, expo, publishTime } }, feedId }.
+    // Harga Pyth mentah perlu diskalakan: price * 10^expo.
     const data = await fetchJson(`${HERMES_ENDPOINT}/sol`);
-    const price = Number(data?.price ?? data?.prices?.sol?.price ?? 0);
+    const entry = data?.prices?.[data?.feedId] || Object.values(data?.prices || {})[0] || null;
+    const price = entry ? scalePythPrice(entry) : 0;
     if (price > 0) {
       hermesSolCache = { price, expiresAt: now + HERMES_SOL_TTL_MS };
       return price;
@@ -174,16 +177,29 @@ export async function fetchHermesSol() {
   return hermesSolCache.price || 0;
 }
 
+/** Skalakan harga Pyth mentah ({price, expo}) jadi nilai desimal USD. */
+function scalePythPrice(entry) {
+  const raw = Number(entry?.price);
+  const expo = Number(entry?.expo);
+  if (!Number.isFinite(raw) || !Number.isFinite(expo)) return 0;
+  return raw * Math.pow(10, expo);
+}
+
 /**
  * Ambil harga beberapa Pyth price feed sekaligus (via backend /api/hermes).
- * @returns {Promise<Object>} { [id]: { price, conf, expo, publishTime } }
+ * @returns {Promise<Object>} { [id]: { price (terskalakan), conf, expo, publishTime } }
  */
 export async function fetchHermesPrice(ids = []) {
   const cleaned = [...new Set(ids.map((id) => String(id || '').trim()).filter(Boolean))];
   if (!cleaned.length) return {};
   try {
     const data = await fetchJson(`${HERMES_ENDPOINT}?ids=${cleaned.join(',')}`);
-    return data?.prices || {};
+    const raw = data?.prices || {};
+    const out = {};
+    for (const [id, entry] of Object.entries(raw)) {
+      out[id] = { ...entry, price: scalePythPrice(entry) };
+    }
+    return out;
   } catch {
     return {};
   }

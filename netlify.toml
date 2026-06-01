@@ -10,6 +10,14 @@
 # VITE_GA_TRACKING_ID
 # VITE_SENTRY_DSN
 
+# Proxy API calls to the backend service (set YOUR_BACKEND_HOST to the deployed server).
+# Must come BEFORE the SPA catch-all so /api/* is not swallowed by index.html.
+[[redirects]]
+  from = "/api/*"
+  to = "https://YOUR_BACKEND_HOST/api/:splat"
+  status = 200
+  force = true
+
 # Redirect rules for SPA
 [[redirects]]
   from = "/*"
@@ -27,7 +35,7 @@
       style-src 'self' 'unsafe-inline';
       img-src 'self' data: https: blob:;
       font-src 'self' data:;
-      connect-src 'self' https://api.mainnet-beta.solana.com https://api.helius.xyz https://www.google-analytics.com wss://*.solana.com;
+      connect-src 'self' https://YOUR_BACKEND_HOST https://hermes.pyth.network https://api.mainnet-beta.solana.com https://api.helius.xyz https://www.google-analytics.com wss://*.solana.com;
       frame-ancestors 'none';
       base-uri 'self';
       form-action 'self';
