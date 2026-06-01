@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   X, Target, Shield, Gauge, Droplets, Users, Rocket, BookOpen,
   CheckCircle2, AlertTriangle, XCircle, Circle, Database, TrendingUp,
-  Copy, Check, LineChart
+  Copy, Check, LineChart, Sparkles
 } from 'lucide-react';
 import { formatUsd, shortAddr } from '../data/autoTrader';
 
@@ -115,6 +115,32 @@ export default function SignalDetail({ signal, trade, onClose }) {
         </div>
 
         {ex.summary && <p className="sd-summary">{ex.summary}</p>}
+
+        {/* Alpha / Meta */}
+        {signal.alpha && (
+          <Section icon={Sparkles} title="Alpha & Meta" accent="var(--blue)">
+            <div className="sd-pills" style={{ marginBottom: 8 }}>
+              <span className="sd-pill" style={{ color: 'var(--blue)' }}>Fase: {signal.alpha.phase?.label}</span>
+              {signal.alpha.phase?.key !== 'migrated' && signal.alpha.phase?.bondingProgress != null && (
+                <span className="sd-pill">Bonding {Math.round(signal.alpha.phase.bondingProgress)}%</span>
+              )}
+              <span className="sd-pill" style={{ color: signal.alphaScore >= 55 ? 'var(--green)' : 'var(--amber)' }}>
+                Alpha {signal.alphaScore}/100
+              </span>
+              <span className="sd-pill">
+                Meta: {signal.alpha.meta?.label}{signal.alpha.meta?.aiLabeled ? ' (AI)' : ''}
+              </span>
+              {signal.alpha.meta?.isFirstMover && <span className="sd-pill" style={{ color: 'var(--green)' }}>First-mover</span>}
+              {signal.alpha.meta?.isHotMeta && <span className="sd-pill" style={{ color: 'var(--cyan)' }}>Hot meta</span>}
+              {signal.alpha.meta?.isSaturated && <span className="sd-pill" style={{ color: 'var(--amber)' }}>Saturated</span>}
+            </div>
+            {signal.alpha.reasons?.length > 0 && (
+              <ul className="sd-list">
+                {signal.alpha.reasons.map((r, i) => <li key={i}>{r}</li>)}
+              </ul>
+            )}
+          </Section>
+        )}
 
         {/* Entry / SL / TP */}
         <Section icon={Target} title="Entry, SL & TP" accent="var(--cyan)">

@@ -22,6 +22,19 @@ function statusChip(trade) {
   return { label: 'PENDING', cls: 'sc-status ready' };
 }
 
+const PHASE_STYLE = {
+  new: { label: 'NEW', background: 'rgba(217,119,6,0.10)', color: 'var(--amber)', border: '1px solid rgba(217,119,6,0.25)' },
+  graduating: { label: 'GRADUATING', background: 'rgba(37,99,235,0.10)', color: 'var(--cyan)', border: '1px solid rgba(37,99,235,0.25)' },
+  migrated: { label: 'MIGRATED', background: 'rgba(22,163,74,0.10)', color: 'var(--green)', border: '1px solid rgba(22,163,74,0.25)' },
+};
+
+function alphaColor(score) {
+  if (score >= 75) return 'var(--green)';
+  if (score >= 55) return 'var(--cyan)';
+  if (score >= 35) return 'var(--amber)';
+  return 'var(--muted)';
+}
+
 export default function SignalCard({ signal, trade, onClick }) {
   const [copied, setCopied] = useState(false);
 
@@ -74,7 +87,23 @@ export default function SignalCard({ signal, trade, onClick }) {
           <span className="badge badge-buy"><TrendingUp size={12} /> BUY</span>
         )}
         <span className={chip.cls}>{chip.label}</span>
+        {(() => {
+          const ph = PHASE_STYLE[signal.alpha?.phase?.key || signal.phase];
+          return ph ? <span className="badge" style={{ background: ph.background, color: ph.color, border: ph.border }}>{ph.label}</span> : null;
+        })()}
       </div>
+
+      {(signal.alpha || signal.alphaScore != null) && (
+        <div className="sc-alpha" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: 11, color: 'var(--muted)', margin: '2px 0 4px' }}>
+          <span title="Meta / narasi token" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            🎯 {signal.alpha?.meta?.label || 'Tanpa meta'}
+            {signal.alpha?.meta?.isFirstMover ? ' · first-mover' : signal.alpha?.meta?.isHotMeta ? ' · hot' : ''}
+          </span>
+          <strong style={{ color: alphaColor(Number(signal.alphaScore || 0)) }} title="Skor alpha 0-100">
+            α {Number(signal.alphaScore || 0)}
+          </strong>
+        </div>
+      )}
 
       {trade?.exitEvents && trade.exitEvents.length > 0 && (
         <div className="sc-tier-progress">

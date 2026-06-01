@@ -4,9 +4,11 @@ import { analyzeRunner } from './runnerDetector';
 import { pushSnapshot, getPeak } from './snapshotStore';
 import { buildSignalExplain } from './signalNarrative';
 import { fetchDiscoveryFeed, fetchTokenMarketSnapshots, fetchTokenSnapshot } from './liveProviders';
+import { fetchHermesSol } from './providers';
 import { enrichFeedTokens } from './feedEnrichment';
 import { computeExitActions, applyExitActions } from './exitEngine';
 import { buildMetaContext, analyzeNarrative } from './narrativeDetector';
+import { computeAlpha } from './alphaEngine';
 import { buildRegimeBaseline, setCachedBaseline, getCachedBaseline } from './marketRegime';
 import { getStyle, loadStyleId, selectSignalsForStyle } from './tradingStyle';
 
@@ -236,7 +238,7 @@ function computeBuyRatio(token) {
   return total > 0 ? buys / total : 0.5;
 }
 
-function buildSignal(token, report, rug, runner, narrative = null) {
+function buildSignal(token, report, rug, runner, narrative = null, alpha = null) {
   const price = Number(token.priceUsd || 0);
   const { grade, side, confidence, reasons } = gradeSignal(token, report, rug, runner, narrative);
 
@@ -280,6 +282,9 @@ function buildSignal(token, report, rug, runner, narrative = null) {
     tracked: TRACKED_GRADES.has(grade),
     explain,
     narrative, // tambahkan narrative ke signal object
+    alpha,     // fase + meta + alphaScore (lihat alphaEngine.js)
+    phase: alpha?.phase?.key || token.phase || 'new',
+    alphaScore: Number(alpha?.alphaScore || 0),
     updatedAt: Date.now()
   };
 }
@@ -290,7 +295,8 @@ function computeSignal(token, metaContext = null, regimeBaseline = null) {
   const rug = analyzeRug(token);
   const runner = analyzeRunner(token, regimeBaseline);
   const narrative = metaContext ? analyzeNarrative(token, metaContext) : null;
-  return buildSignal(token, report, rug, runner, narrative);
+  const alpha = computeAlpha(token, { narrative, runner, report });
+  return buildSignal(token, report, rug, runner, narrative, alpha);
 }
 
 function reevaluateSignal(signal, liveToken) {
@@ -317,8 +323,13 @@ function reevaluateSignal(signal, liveToken) {
     token: liveToken, report, rug, runner, grade, side, reasons, entry, sl, tp, tpPct, slPct, rr, narrative: signal.narrative
   });
 
+  const alpha = computeAlpha(liveToken, { narrative: signal.narrative, runner, report });
+
   return {
     ...signal,
+    alpha,
+    phase: alpha?.phase?.key || signal.phase,
+    alphaScore: Number(alpha?.alphaScore || 0),
     priceUsd: price,
     liquidityUsd: Number(liveToken.liquidityUsd || signal.liquidityUsd),
     m5: liveToken.priceChange?.m5 ?? signal.m5,
@@ -354,10 +365,12 @@ function signalEdge(s) {
   const vol = Number(ex.volumeIntegrity || 0);
   const riskPenalty = { low: 0, medium: 14, high: 34, critical: 70 }[ex.riskNarrative?.level || 'low'] || 0;
   const momentum = (Number(s.m5) || 0) * 0.6 + clamp(Number(s.h1) || 0, -25, 45) * 0.2;
+  const alphaScore = Number(s.alphaScore || s.alpha?.alphaScore || 0);
   return (Number(s.score) || 0) * 0.5
     + (Number(s.confidence) || 0) * 0.3
     + runner * 0.25
     + vol * 0.15
+    + alphaScore * 0.1   // tiebreaker alpha (tidak mengubah gate grade)
     + momentum
     - riskPenalty;
 }
@@ -658,6 +671,57 @@ export function getSignalHistory() {
   return loadSignalHistory();
 }
 
-export function scanDeep(ca) {
-  return fetchTokenSnapshot(ca);
+/**
+ * scanDeep — paste-scan satu klik. Ambil snapshot live lengkap lalu jalankan
+ * seluruh lapisan analisa (risk + runner + alpha/meta) dan rangkum jadi satu
+ * verdict: SAFE / CAUTION / RUG. Mengembalikan superset (field lama tetap ada),
+ * jadi konsumen lama tidak rusak.
+ */
+export async function scanDeep(ca) {
+  const [snapshot, solUsd] = await Promise.all([
+    fetchTokenSnapshot(ca),
+    fetchHermesSol().catch(() => 0)
+  ]);
+  if (!snapshot) return null;
+
+  pushSnapshot(snapshot.ca, snapshot);
+  const report = analyzeToken(snapshot, getCachedBaseline());
+  const rug = analyzeRug(snapshot);
+  const runner = analyzeRunner(snapshot, getCachedBaseline());
+  const metaContext = buildMetaContext([snapshot]);
+  const narrative = analyzeNarrative(snapshot, metaContext);
+  const alpha = computeAlpha(snapshot, { narrative, runner, report });
+
+  const flags = snapshot.flags || {};
+  const isRug = rug.isRugged
+    || rug.level === 'critical'
+    || rug.level === 'high'
+    || flags.freezeActive === true
+    || flags.mintRevoked === false
+    || flags.madeOnSolBlacklisted === true;
+  const isSafe = !isRug
+    && report.score >= 70
+    && (rug.level === 'low' || rug.level == null)
+    && report.confidence >= 70
+    && flags.freezeActive !== true
+    && flags.mintRevoked === true;
+
+  const verdict = {
+    key: isRug ? 'RUG' : isSafe ? 'SAFE' : 'CAUTION',
+    label: isRug ? 'BERBAHAYA / RUG' : isSafe ? 'AMAN' : 'HATI-HATI',
+    tone: isRug ? 'danger' : isSafe ? 'good' : 'warning',
+    primaryRisk: report.primaryRisk,
+    rugLevel: rug.level || 'low'
+  };
+
+  // Superset: snapshot disebar di root agar pemanggil lama tetap dapat field token.
+  return {
+    ...snapshot,
+    scan: { verdict, report, rug, runner, alpha, narrative },
+    verdict,
+    phase: alpha.phase,
+    meta: alpha.meta,
+    alphaScore: alpha.alphaScore,
+    solUsd: Number(solUsd || 0)
+  };
 }

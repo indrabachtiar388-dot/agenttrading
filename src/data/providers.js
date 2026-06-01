@@ -2,7 +2,12 @@ const DEV = import.meta.env.DEV;
 const BIRDEYE_ENDPOINT = DEV ? 'http://localhost:3001/api/birdeye' : '/api/birdeye';
 const JUPITER_ENDPOINT = DEV ? 'http://localhost:3001/api/jupiter' : '/api/jupiter';
 const PUMPFUN_ENDPOINT = DEV ? 'http://localhost:3001/api/pumpfun' : '/api/pumpfun';
+const HERMES_ENDPOINT = DEV ? 'http://localhost:3001/api/hermes' : '/api/hermes';
 const HTTP_TIMEOUT_MS = 9000;
+
+// Cache SOL/USD dari Pyth Hermes — dipakai sebagai acuan konversi & cross-validate.
+let hermesSolCache = { price: 0, expiresAt: 0 };
+const HERMES_SOL_TTL_MS = 4000;
 
 let tokenRegistryPromise = null;
 const priceCache = new Map();
@@ -145,6 +150,43 @@ export function pumpFunToFeedToken(coin) {
       ? 'Token udah selesai bonding dan migrate. Verifikasi LP Raydium sebelum entry.'
       : `Bonding ${coin.bondingCurveProgress || 0}%. Cek dev, replies, dan top buyer awal sebelum entry.`
   };
+}
+
+/**
+ * Ambil harga SOL/USD dari Pyth Hermes (via backend /api/hermes/sol).
+ * Hemat: cache 4 dtk. Degrade aman → kembalikan 0 kalau backend mati.
+ */
+export async function fetchHermesSol() {
+  const now = Date.now();
+  if (hermesSolCache.price > 0 && hermesSolCache.expiresAt > now) {
+    return hermesSolCache.price;
+  }
+  try {
+    const data = await fetchJson(`${HERMES_ENDPOINT}/sol`);
+    const price = Number(data?.price ?? data?.prices?.sol?.price ?? 0);
+    if (price > 0) {
+      hermesSolCache = { price, expiresAt: now + HERMES_SOL_TTL_MS };
+      return price;
+    }
+  } catch {
+    // backend Hermes belum aktif — acuan SOL tidak tersedia, abaikan.
+  }
+  return hermesSolCache.price || 0;
+}
+
+/**
+ * Ambil harga beberapa Pyth price feed sekaligus (via backend /api/hermes).
+ * @returns {Promise<Object>} { [id]: { price, conf, expo, publishTime } }
+ */
+export async function fetchHermesPrice(ids = []) {
+  const cleaned = [...new Set(ids.map((id) => String(id || '').trim()).filter(Boolean))];
+  if (!cleaned.length) return {};
+  try {
+    const data = await fetchJson(`${HERMES_ENDPOINT}?ids=${cleaned.join(',')}`);
+    return data?.prices || {};
+  } catch {
+    return {};
+  }
 }
 
 export function crossValidatePrice(prices) {

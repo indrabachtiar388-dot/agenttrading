@@ -17,6 +17,7 @@ import {
 } from '../data/autoTrader';
 import SignalCard from '../components/SignalCard.jsx';
 import SignalDetail from '../components/SignalDetail.jsx';
+import PasteScanPanel from '../components/PasteScanPanel.jsx';
 import PerformancePanel from '../components/PerformancePanel.jsx';
 import TradeConfirmationModal from '../components/TradeConfirmationModal.jsx';
 import TradingStyleSelector from '../components/TradingStyleSelector.jsx';
@@ -25,6 +26,7 @@ import { getStyle, loadStyleId, saveStyleId, TRADING_STYLES } from '../data/trad
 const TABS = [
   { key: 'home', label: 'Beranda', icon: Bot },
   { key: 'signals', label: 'Sinyal & Posisi', icon: Activity },
+  { key: 'scan', label: 'Paste Scan', icon: Zap },
   { key: 'performance', label: 'Performa', icon: Trophy },
 ];
 
@@ -233,6 +235,9 @@ export default function Dashboard({ onLogout }) {
           onRefresh={handleRefreshSignals}
           onSelect={(s) => setSelectedCa(s.ca)}
         />
+      )}
+      {tab === 'scan' && (
+        <PasteScanPanel />
       )}
       {tab === 'performance' && (
         <PerformancePanel stats={stats} trades={trades} signalHistory={signalHistory} onReset={handleReset} />
